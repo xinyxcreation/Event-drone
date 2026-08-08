@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#e00012">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg">
+  <link rel="stylesheet" href="style.css">
+  <title>Événements Drone</title>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Événements Drone</h1>
+    <small id="updated">Chargement…</small>
+  </div>
+  <button id="refresh" title="Actualiser">↻</button>
+</header>
+
+<main>
+  <section class="filters">
+    <label>Distance
+      <select id="distance">
+        <option value="10">10 km</option>
+        <option value="20">20 km</option>
+        <option value="30" selected>30 km</option>
+        <option value="50">50 km</option>
+        <option value="100">100 km</option>
+      </select>
+    </label>
+    <label>Afficher
+      <select id="statusFilter">
+        <option value="all">Tous</option>
+        <option value="fav">Favoris</option>
+        <option value="todo">À contacter</option>
+        <option value="contacted">Contactés</option>
+        <option value="accepted">Vol accepté</option>
+        <option value="refused">Vol refusé</option>
+      </select>
+    </label>
+  </section>
+
+  <section id="stats" class="stats"></section>
+  <section id="events"></section>
+</main>
+
+<template id="eventTemplate">
+  <article class="event">
+    <div class="event-top">
+      <div>
+        <span class="date"></span>
+        <h2 class="title"></h2>
+        <p class="place"></p>
+      </div>
+      <button class="fav">☆</button>
+    </div>
+    <p class="description"></p>
+    <div class="badges">
+      <span class="distance-badge"></span>
+      <span class="contact-badge"></span>
+      <span class="flight-badge"></span>
+    </div>
+    <div class="actions">
+      <button class="contact">📞 Contact</button>
+      <button class="flight">🚁 Vol</button>
+      <button class="details">Détails</button>
+    </div>
+  </article>
+</template>
+
+<script src="app.js"></script>
+</body>
+</html>
