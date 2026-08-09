@@ -15,18 +15,31 @@
   <button id="refresh" title="Actualiser">↻</button>
 </header>
 <main>
+<section class="sector-box">
+  <label>Secteur de recherche
+    <div class="sector-row"><input id="sector" type="search" placeholder="Châteaubriant, Nantes, Nozay…"><button id="sectorSearch">📍</button></div>
+  </label>
+  <small id="sectorStatus"></small>
+  <button id="prefs" class="prefs">⚙️ Mes préférences / apprentissage</button>
+</section>
 <section class="filters">
   <label>Distance
     <select id="distance">
-      <option value="10">10 km</option><option value="20">20 km</option>
-      <option value="30" selected>30 km</option><option value="50">50 km</option><option value="100">100 km</option>
+      <option value="10">10 km</option><option value="20">20 km</option><option value="30" selected>30 km</option><option value="50">50 km</option><option value="100">100 km</option><option value="150">150 km</option>
     </select>
   </label>
   <label>Afficher
     <select id="statusFilter">
-      <option value="all">Tous</option><option value="outdoor">🚁 Extérieur</option>
-      <option value="fav">⭐ Favoris</option><option value="todo">📞 À contacter</option>
-      <option value="contacted">📞 Contactés</option><option value="accepted">🟢 Vol accepté</option>
+      <option value="potential" selected>* Potentiel et +</option>
+      <option value="very">*** Très haut potentiel</option>
+      <option value="high">** Potentiel élevé</option>
+      <option value="medium">* Potentiel</option>
+      <option value="outdoor">🚁 Extérieur</option>
+      <option value="all">📅 Tous</option>
+      <option value="fav">⭐ Mes favoris</option>
+      <option value="todo">📞 À contacter</option>
+      <option value="contacted">📞 Contactés</option>
+      <option value="accepted">🟢 Vol accepté</option>
       <option value="refused">🔴 Vol refusé</option>
     </select>
   </label>
@@ -38,7 +51,7 @@
 <article class="event">
   <div class="event-top"><div><span class="date"></span><h2 class="title"></h2><p class="place"></p></div><button class="fav">☆</button></div>
   <p class="description"></p>
-  <div class="badges"><span class="distance-badge"></span><span class="outdoor-badge"></span><span class="contact-badge"></span><span class="flight-badge"></span></div>
+  <div class="badges"><span class="distance-badge"></span><span class="potential-badge"></span><span class="outdoor-badge"></span><span class="contact-badge"></span><span class="flight-badge"></span></div>
   <div class="actions"><button class="contact">📞 Contact</button><button class="flight">🚁 Vol</button><button class="details">Détails</button></div>
 </article>
 </template>
