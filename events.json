@@ -1,4 +1,11 @@
 {
-  "generatedAt": null,
+  "generatedAt": "2026-08-09T02:41:49.837347+00:00",
+  "center": {
+    "lat": 47.718,
+    "lon": -1.376,
+    "name": "Châteaubriant"
+  },
+  "radiusKm": 100,
+  "days": 30,
   "events": []
 }
