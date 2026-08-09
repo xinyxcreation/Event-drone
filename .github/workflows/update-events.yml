@@ -32,9 +32,9 @@ jobs:
         run: |
           python3 - <<'PY'
           import json
-          d=json.load(open("events.json",encoding="utf-8"))
-          n=len(d.get("events",[]))
-          print("Événements dans events.json :",n)
+          d = json.load(open("events.json", encoding="utf-8"))
+          n = len(d.get("events", []))
+          print("Événements dans events.json :", n)
           if n == 0:
               raise SystemExit("Aucun événement généré")
           PY
