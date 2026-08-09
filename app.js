@@ -1,9 +1,37 @@
+/* =========================================================
+ E VENT-D*RONE
+ Sauvegarde synchronisée Supabase
+ Identifiant unique : event-drone-dronix
+ ========================================================= */
+
 const STORAGE = 'events-drone-user-v5';
+
+const SUPABASE_URL =
+'https://bqfeuzynjeofcwqqlcgw.supabase.co';
+
+const SUPABASE_KEY =
+'sb_publishable_w68t2Dfy6yCyCtOltOFDcQ_Et3nMBE5';
+
+const SUPABASE_TABLE =
+'event_drone_user_data';
+
+const USER_ID =
+'event-drone-dronix';
+
 const LEARN_THRESHOLD = 3;
 
 let events = [];
+
 let learningCache = null;
 let potentialCache = new Map();
+
+let cloudReady = false;
+let cloudSyncPromise = null;
+
+
+/* =========================================================
+ F ALLBAC*K
+ ========================================================= */
 
 const fallback = [
   {
@@ -17,6 +45,7 @@ const fallback = [
     droneScore: 8,
     dronePotential: 'high'
   },
+
 {
   id: 'local-2',
   date: '2026-08-28',
@@ -30,6 +59,7 @@ const fallback = [
   droneScore: 10,
   dronePotential: 'high'
 },
+
 {
   id: 'local-3',
   date: '2026-08-29',
@@ -42,17 +72,20 @@ const fallback = [
   droneScore: 8,
   dronePotential: 'high'
 },
+
 {
   id: 'local-4',
   date: '2026-09-05',
   title: 'Nozay s’Expose !',
   place: 'Nozay',
   distance: 25,
-  description: 'Artisans, associations, braderie, vide-grenier et animations.',
+  description:
+  'Artisans, associations, braderie, vide-grenier et animations.',
   outdoor: true,
   droneScore: 10,
   dronePotential: 'high'
 },
+
 {
   id: 'local-5',
   date: '2026-09-06',
@@ -65,6 +98,7 @@ const fallback = [
   droneScore: 8,
   dronePotential: 'high'
 },
+
 {
   id: 'local-6',
   date: '2026-09-06',
@@ -76,6 +110,7 @@ const fallback = [
   droneScore: 10,
   dronePotential: 'high'
 },
+
 {
   id: 'local-7',
   date: '2026-09-06',
@@ -89,34 +124,36 @@ const fallback = [
 }
 ];
 
-const $ = selector => document.querySelector(selector);
+
+/* =========================================================
+ D OM    *
+ ========================================================= */
+
+const $ = selector =>
+document.querySelector(selector);
 
 
 /* =========================================================
- U TILISA*TEUR / LOCAL STORAGE
+ L OCAL S*TORAGE
  ========================================================= */
 
 function loadUser() {
+
   try {
+
     return JSON.parse(
       localStorage.getItem(STORAGE) || '{}'
     );
+
   } catch {
+
     return {};
   }
 }
 
 
-/*
- * Sauvegarde uniquement l'événement modifié.
- *
- * Avant :
- *   on réécrivait les ~9 000 événements à chaque clic.
- *
- * Maintenant :
- *   on écrit uniquement l'état de l'événement concerné.
- */
-function saveEventState(e) {
+function saveLocalEvent(e) {
+
   const user = loadUser();
 
   user[e.id] = {
@@ -129,9 +166,418 @@ function saveEventState(e) {
     STORAGE,
     JSON.stringify(user)
   );
+}
+
+
+/* =========================================================
+ S UPABAS*E
+ ========================================================= */
+
+function supabaseHeaders(extra = {}) {
+
+  return {
+    apikey: SUPABASE_KEY,
+
+    Authorization:
+    `Bearer ${SUPABASE_KEY}`,
+
+    'Content-Type':
+    'application/json',
+
+    ...extra
+  };
+}
+
+
+/*
+ * Vérifie que Supabase répond.
+ */
+
+async function testSupabase() {
+
+  try {
+
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}` +
+      `?select=event_id&user_id=eq.${encodeURIComponent(USER_ID)}` +
+      `&limit=1`,
+      {
+        method: 'GET',
+        headers: supabaseHeaders()
+      }
+    );
+
+    if (!response.ok) {
+
+      console.warn(
+        'Supabase indisponible:',
+        response.status,
+        await response.text()
+      );
+
+      return false;
+    }
+
+    return true;
+
+  } catch (error) {
+
+    console.warn(
+      'Supabase inaccessible:',
+      error
+    );
+
+    return false;
+  }
+}
+
+
+/*
+ * Récupère toutes les données utilisateur.
+ */
+
+async function loadCloudUserData() {
+
+  try {
+
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}` +
+      `?select=event_id,favorite,contact,flight,updated_at` +
+      `&user_id=eq.${encodeURIComponent(USER_ID)}`,
+                                 {
+                                   method: 'GET',
+                                   headers: supabaseHeaders()
+                                 }
+    );
+
+    if (!response.ok) {
+
+      throw new Error(
+        `HTTP ${response.status}: ` +
+        await response.text()
+      );
+    }
+
+    const rows =
+    await response.json();
+
+    return Array.isArray(rows)
+    ? rows
+    : [];
+
+  } catch (error) {
+
+    console.warn(
+      'Impossible de récupérer Supabase:',
+      error
+    );
+
+    return null;
+  }
+}
+
+
+/*
+ * Sauvegarde un événement dans Supabase.
+ *
+ * UPSERT :
+ * - crée si absent
+ * - modifie si présent
+ */
+
+async function saveCloudEvent(e) {
+
+  const payload = {
+
+    user_id: USER_ID,
+
+    event_id: String(e.id),
+
+    favorite: !!e.favorite,
+
+    contact:
+    e.contact || 'todo',
+
+    flight:
+    e.flight || 'unknown',
+
+    updated_at:
+    new Date().toISOString()
+  };
+
+
+  try {
+
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}`,
+      {
+        method: 'POST',
+
+        headers: supabaseHeaders({
+          Prefer:
+          'resolution=merge-duplicates,return=minimal'
+        }),
+
+        body:
+        JSON.stringify(payload)
+      }
+    );
+
+
+    if (!response.ok) {
+
+      throw new Error(
+        `HTTP ${response.status}: ` +
+        await response.text()
+      );
+    }
+
+
+    cloudReady = true;
+
+    return true;
+
+  } catch (error) {
+
+    cloudReady = false;
+
+    console.warn(
+      'Sauvegarde Supabase échouée:',
+      error
+    );
+
+    return false;
+  }
+}
+
+
+/* =========================================================
+ S YNCHRO*NISATION
+ ========================================================= */
+
+async function synchronizeUserData() {
+
+  /*
+   * Évite plusieurs synchronisations simultanées.
+   */
+
+  if (cloudSyncPromise) {
+    return cloudSyncPromise;
+  }
+
+
+  cloudSyncPromise =
+  (async () => {
+
+    const local =
+    loadUser();
+
+
+    const remote =
+    await loadCloudUserData();
+
+
+    /*
+     * Supabase inaccessible :
+     * on continue avec le cache local.
+     */
+
+    if (remote === null) {
+
+      cloudReady = false;
+
+      return;
+    }
+
+
+    cloudReady = true;
+
+
+    /*
+     * Conversion des données distantes.
+     */
+
+    const remoteUser = {};
+
+    for (const row of remote) {
+
+      remoteUser[row.event_id] = {
+
+        favorite:
+        !!row.favorite,
+
+        contact:
+        row.contact || 'todo',
+
+        flight:
+        row.flight || 'unknown'
+      };
+    }
+
+
+    /*
+     * On commence avec les données locales.
+     */
+
+    const merged = {
+      ...local
+    };
+
+
+    /*
+     * Les données présentes dans Supabase
+     * sont prioritaires.
+     */
+
+    for (const [id, state] of Object.entries(
+      remoteUser
+    )) {
+
+      merged[id] = state;
+    }
+
+
+    /*
+     * Mise à jour locale.
+     */
+
+    localStorage.setItem(
+      STORAGE,
+      JSON.stringify(merged)
+    );
+
+
+    /*
+     * Application immédiate aux événements.
+     */
+
+    events = events.map(e => {
+
+      const state =
+      merged[e.id];
+
+      if (!state) {
+        return e;
+      }
+
+      return {
+        ...e,
+
+        favorite:
+        !!state.favorite,
+
+        contact:
+        state.contact ||
+        'todo',
+
+        flight:
+        state.flight ||
+        'unknown'
+      };
+    });
+
+
+    /*
+     * Migration automatique :
+     *
+     * Les données qui existaient seulement
+     * dans localStorage sont envoyées
+     * vers Supabase.
+     */
+
+    const remoteIds =
+    new Set(
+      remote.map(row =>
+      String(row.event_id)
+      )
+    );
+
+
+    const localEntries =
+    Object.entries(local);
+
+
+    for (const [eventId, state] of localEntries) {
+
+      if (remoteIds.has(String(eventId))) {
+        continue;
+      }
+
+
+      await saveCloudEvent({
+
+        id: eventId,
+
+        favorite:
+        !!state.favorite,
+
+        contact:
+        state.contact ||
+        'todo',
+
+        flight:
+        state.flight ||
+        'unknown'
+      });
+    }
+
+
+    learningCache = null;
+    potentialCache.clear();
+
+  })()
+  .finally(() => {
+
+    cloudSyncPromise = null;
+  });
+
+
+  return cloudSyncPromise;
+}
+
+
+/* =========================================================
+ S AUVEGA*RDE UTILISATEUR
+ ========================================================= */
+
+async function saveEventState(e) {
+
+  /*
+   * Sauvegarde locale immédiate.
+   * L'interface n'attend pas Internet.
+   */
+
+  saveLocalEvent(e);
 
   learningCache = null;
   potentialCache.clear();
+
+
+  /*
+   * Sauvegarde distante en arrière-plan.
+   */
+
+  if (cloudReady) {
+
+    saveCloudEvent(e);
+
+  } else {
+
+    /*
+     * Si Supabase n'était pas disponible,
+     * on retente.
+     */
+
+    const available =
+    await testSupabase();
+
+    if (available) {
+
+      cloudReady = true;
+
+      await saveCloudEvent(e);
+    }
+  }
 }
 
 
@@ -140,24 +586,37 @@ function saveEventState(e) {
  ========================================================= */
 
 function normalizeText(value) {
+
   return String(value || '')
   .toLowerCase()
   .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .replace(/[^a-z0-9\s-]/g, ' ')
-  .replace(/\s+/g, ' ')
+  .replace(
+    /[\u0300-\u036f]/g,
+    ''
+  )
+  .replace(
+    /[^a-z0-9\s-]/g,
+    ' '
+  )
+  .replace(
+    /\s+/g,
+    ' '
+  )
   .trim();
 }
 
 
 function categoryKey(e) {
+
   return normalizeText(
-    e.category || 'sans categorie'
+    e.category ||
+    'sans categorie'
   );
 }
 
 
 function meaningfulWords(e) {
+
   return normalizeText(
     `${e.title || ''} ${e.category || ''}`
   )
@@ -180,17 +639,26 @@ function meaningfulWords(e) {
 
 
 /* =========================================================
- D ATES  *
+ D ATE   *
  ========================================================= */
 
 function fmtDate(date) {
-  const x = new Date(
-    String(date || '') + 'T12:00:00'
+
+  const x =
+  new Date(
+    String(date || '') +
+    'T12:00:00'
   );
 
+
   if (isNaN(x)) {
-    return String(date || 'Date inconnue');
+
+    return String(
+      date ||
+      'Date inconnue'
+    );
   }
+
 
   return x.toLocaleDateString(
     'fr-FR',
@@ -208,15 +676,24 @@ function fmtDate(date) {
  ========================================================= */
 
 function applyUserState(list) {
-  const user = loadUser();
+
+  const user =
+  loadUser();
+
 
   return list.map(e => {
-    const state = user[e.id] || {};
+
+    const state =
+    user[e.id] ||
+    {};
+
 
     return {
+
       ...e,
 
-      favorite: !!state.favorite,
+      favorite:
+      !!state.favorite,
 
       contact:
       state.contact ||
@@ -236,16 +713,10 @@ function applyUserState(list) {
  D EDOUBL*ONNAGE
  ========================================================= */
 
-/*
- * Certains événements peuvent apparaître plusieurs fois
- * dans la source avec des IDs différents.
- *
- * On construit une clé avec :
- * titre + date + heure + lieu + adresse
- */
-
 function eventDuplicateKey(e) {
+
   return normalizeText(
+
     [
       e.title,
       e.date,
@@ -255,29 +726,44 @@ function eventDuplicateKey(e) {
     ]
     .filter(Boolean)
     .join('|')
+
   );
 }
 
 
 function deduplicateEvents(list) {
-  const seen = new Set();
-  const result = [];
+
+  const seen =
+  new Set();
+
+  const result =
+  [];
+
 
   for (const event of list) {
-    const key = eventDuplicateKey(event);
+
+    const key =
+    eventDuplicateKey(event);
+
 
     if (!key) {
+
       result.push(event);
+
       continue;
     }
+
 
     if (seen.has(key)) {
       continue;
     }
 
+
     seen.add(key);
+
     result.push(event);
   }
+
 
   return result;
 }
@@ -288,15 +774,21 @@ function deduplicateEvents(list) {
  ========================================================= */
 
 function mergeFallback(list) {
-  const existingKeys = new Set(
+
+  const existingKeys =
+  new Set(
     list.map(eventDuplicateKey)
   );
 
-  const additions = fallback.filter(
-    event => !existingKeys.has(
+
+  const additions =
+  fallback.filter(
+    event =>
+    !existingKeys.has(
       eventDuplicateKey(event)
     )
   );
+
 
   return deduplicateEvents([
     ...list,
@@ -309,50 +801,54 @@ function mergeFallback(list) {
  A PPRENT*ISSAGE
  ========================================================= */
 
-/*
- * Le système apprend des favoris.
- *
- * 3 favoris similaires :
- *
- * catégorie régulièrement favorite
- *       OU
- * mots régulièrement présents
- *
- * => ★★★ Très haut potentiel
- */
-
 function learning() {
+
   if (learningCache) {
     return learningCache;
   }
 
-  const category = Object.create(null);
-  const words = Object.create(null);
+
+  const category =
+  Object.create(null);
+
+  const words =
+  Object.create(null);
+
 
   for (const e of events) {
+
     if (!e.favorite) {
       continue;
     }
 
-    const categoryName = categoryKey(e);
+
+    const categoryName =
+    categoryKey(e);
+
 
     category[categoryName] =
     (category[categoryName] || 0) + 1;
 
-    const uniqueWords = new Set(
+
+    const uniqueWords =
+    new Set(
       meaningfulWords(e)
     );
 
+
     for (const word of uniqueWords) {
+
       words[word] =
       (words[word] || 0) + 1;
     }
   }
 
+
   learningCache = {
     category,
     words
   };
+
 
   return learningCache;
 }
@@ -364,47 +860,61 @@ function learning() {
 
 function potentialLevel(e) {
 
-  /*
-   * Cache individuel.
-   *
-   * Un même événement peut être demandé
-   * plusieurs dizaines de fois pendant render().
-   */
-  if (potentialCache.has(e.id)) {
-    return potentialCache.get(e.id);
+  if (
+    potentialCache.has(e.id)
+  ) {
+
+    return potentialCache.get(
+      e.id
+    );
   }
 
-  const learned = learning();
+
+  const learned =
+  learning();
+
 
   let level = 0;
 
+
   /*
-   * ★★★
-   * Apprentissage automatique.
+   * ★★★ appris automatiquement
    */
 
   if (
-    (learned.category[categoryKey(e)] || 0)
-    >= LEARN_THRESHOLD
+    (
+      learned.category[
+        categoryKey(e)
+      ] || 0
+    ) >= LEARN_THRESHOLD
   ) {
+
     level = 3;
   }
 
+
   if (level < 3) {
-    for (const word of meaningfulWords(e)) {
+
+    for (
+      const word of meaningfulWords(e)
+    ) {
 
       if (
-        (learned.words[word] || 0)
-        >= LEARN_THRESHOLD
+        (
+          learned.words[word] || 0
+        ) >= LEARN_THRESHOLD
       ) {
+
         level = 3;
+
         break;
       }
     }
   }
 
+
   /*
-   * Potentiel fourni par la source.
+   * ★★ potentiel fourni par la source
    */
 
   if (level < 3) {
@@ -413,27 +923,31 @@ function potentialLevel(e) {
       e.dronePotential === 'high' ||
       Number(e.droneScore || 0) >= 6
     ) {
-      level = 2;
-    }
 
-    else if (
+      level = 2;
+
+    } else if (
       e.dronePotential === 'medium' ||
       Number(e.droneScore || 0) >= 3
     ) {
+
       level = 1;
     }
   }
+
 
   potentialCache.set(
     e.id,
     level
   );
 
+
   return level;
 }
 
 
 function potentialLabel(level) {
+
   return [
     '☆ Faible potentiel',
     '★ Potentiel',
@@ -444,6 +958,7 @@ function potentialLabel(level) {
 
 
 function potentialClass(level) {
+
   return [
     'low',
     'medium',
@@ -454,24 +969,37 @@ function potentialClass(level) {
 
 
 /* =========================================================
- E TATS  *
+ S TATUT *VOL
  ========================================================= */
 
 function statusLabel(e) {
+
   return {
-    unknown: '🚁 Non vérifié',
-    asked: '🟠 Autorisation demandée',
-    accepted: '🟢 Vol accepté',
-    refused: '🔴 Vol refusé'
-  }[e.flight] || '🚁 Non vérifié';
+
+    unknown:
+    '🚁 Non vérifié',
+
+    asked:
+    '🟠 Autorisation demandée',
+
+    accepted:
+    '🟢 Vol accepté',
+
+    refused:
+    '🔴 Vol refusé'
+
+  }[
+    e.flight
+  ] || '🚁 Non vérifié';
 }
 
 
-/*
- * "À contacter" = favoris non encore contactés.
- */
+/* =========================================================
+ C ONTACT*
+ ========================================================= */
 
 function isToContact(e) {
+
   return (
     !!e.favorite &&
     e.contact !== 'contacted'
@@ -480,7 +1008,10 @@ function isToContact(e) {
 
 
 function isPotential(e) {
-  return potentialLevel(e) >= 1;
+
+  return (
+    potentialLevel(e) >= 1
+  );
 }
 
 
@@ -490,72 +1021,102 @@ function isPotential(e) {
 
 function quickFilter(filter) {
 
-  const select = $('#statusFilter');
+  const select =
+  $('#statusFilter');
+
 
   if (!select) {
     return;
   }
 
-  select.value = filter;
+
+  select.value =
+  filter;
+
 
   render();
 }
 
 
 /* =========================================================
- A CTUALI*SATION
+ C HARGEM*ENT EVENTS.JSON
  ========================================================= */
 
 async function refresh() {
 
-  if ($('#updated')) {
-    $('#updated').textContent =
+  const updated =
+  $('#updated');
+
+
+  if (updated) {
+
+    updated.textContent =
     '🔄 Actualisation…';
   }
 
+
   try {
 
-    const response = await fetch(
-      './events.json?ts=' + Date.now(),
-                                 {
-                                   cache: 'no-store'
-                                 }
+    const response =
+    await fetch(
+      './events.json?ts=' +
+      Date.now(),
+                {
+                  cache: 'no-store'
+                }
     );
 
+
     if (!response.ok) {
+
       throw new Error(
-        'HTTP ' + response.status
+        'HTTP ' +
+        response.status
       );
     }
 
-    const data = await response.json();
 
-    let list = Array.isArray(data.events)
+    const data =
+    await response.json();
+
+
+    let list =
+    Array.isArray(data.events)
     ? data.events
     : [];
 
+
     /*
-     * Dédoublonnage avant tout traitement.
+     * Suppression des doublons
      */
-    list = deduplicateEvents(list);
+
+    list =
+    deduplicateEvents(list);
+
 
     /*
      * Ajout des événements locaux
-     * qui ne sont pas déjà présents.
      */
-    list = mergeFallback(list);
+
+    list =
+    mergeFallback(list);
+
 
     /*
-     * Application des favoris / contacts / vols.
+     * Application du cache local
      */
-    events = applyUserState(list);
+
+    events =
+    applyUserState(list);
+
 
     learningCache = null;
     potentialCache.clear();
 
-    if ($('#updated')) {
 
-      $('#updated').textContent =
+    if (updated) {
+
+      updated.textContent =
       `✓ ${events.length} événements · ` +
       new Date().toLocaleTimeString(
         'fr-FR',
@@ -566,6 +1127,34 @@ async function refresh() {
       );
     }
 
+
+    /*
+     * Affichage immédiatement.
+     */
+
+    render();
+
+
+    /*
+     * Synchronisation cloud
+     * sans bloquer l'affichage.
+     */
+
+    synchronizeUserData()
+    .then(() => {
+
+      render();
+
+    })
+    .catch(error => {
+
+      console.warn(
+        'Synchronisation:',
+        error
+      );
+    });
+
+
   } catch (error) {
 
     console.error(
@@ -573,20 +1162,38 @@ async function refresh() {
       error
     );
 
-    events = applyUserState(
-      deduplicateEvents(fallback)
+
+    events =
+    applyUserState(
+      deduplicateEvents(
+        fallback
+      )
     );
+
 
     learningCache = null;
     potentialCache.clear();
 
-    if ($('#updated')) {
-      $('#updated').textContent =
+
+    if (updated) {
+
+      updated.textContent =
       '⚠️ events.json indisponible · données locales';
     }
-  }
 
-  render();
+
+    render();
+
+
+    /*
+     * Même en fallback, on tente
+     * de récupérer les données cloud.
+     */
+
+    synchronizeUserData()
+    .then(() => render())
+    .catch(() => {});
+  }
 }
 
 
@@ -596,129 +1203,202 @@ async function refresh() {
 
 function render() {
 
-  const distanceElement = $('#distance');
-  const filterElement = $('#statusFilter');
+  const distanceElement =
+  $('#distance');
 
-  if (!distanceElement || !filterElement) {
+  const filterElement =
+  $('#statusFilter');
+
+
+  if (
+    !distanceElement ||
+    !filterElement
+  ) {
+
     return;
   }
 
-  const max = Number(
+
+  const max =
+  Number(
     distanceElement.value
   );
+
 
   const filter =
   filterElement.value;
 
+
   /*
-   * Nouveau calcul d'apprentissage uniquement
-   * lorsqu'un état a changé.
+   * Reconstruction du cache potentiel.
    */
+
   learningCache = null;
   potentialCache.clear();
 
+
   /*
-   * Calcul du potentiel une seule fois par événement.
+   * Calcul une seule fois.
    */
+
   for (const e of events) {
+
     potentialLevel(e);
   }
 
-  /*
-   * Filtre distance.
-   */
-  let list = events.filter(
-    e => Number(e.distance) <= max
-  );
 
   /*
-   * Filtres.
+   * Distance
+   */
+
+  let list =
+  events.filter(
+    e =>
+    Number(e.distance) <= max
+  );
+
+
+  /*
+   * Filtres
    */
 
   switch (filter) {
 
     case 'potential':
-      list = list.filter(
-        e => potentialLevel(e) >= 1
+
+      list =
+      list.filter(
+        e =>
+        potentialLevel(e) >= 1
       );
+
       break;
+
 
     case 'high':
-      list = list.filter(
-        e => potentialLevel(e) === 2
+
+      list =
+      list.filter(
+        e =>
+        potentialLevel(e) === 2
       );
+
       break;
+
 
     case 'very-high':
-      list = list.filter(
-        e => potentialLevel(e) === 3
+
+      list =
+      list.filter(
+        e =>
+        potentialLevel(e) === 3
       );
+
       break;
+
 
     case 'medium':
-      list = list.filter(
-        e => potentialLevel(e) === 1
+
+      list =
+      list.filter(
+        e =>
+        potentialLevel(e) === 1
       );
+
       break;
+
 
     case 'outdoor':
-      list = list.filter(
+
+      list =
+      list.filter(
         e => e.outdoor
       );
+
       break;
+
 
     case 'fav':
-      list = list.filter(
+
+      list =
+      list.filter(
         e => e.favorite
       );
+
       break;
+
 
     case 'todo':
-      list = list.filter(
+
+      list =
+      list.filter(
         isToContact
       );
+
       break;
+
 
     case 'contacted':
-      list = list.filter(
-        e => e.contact === 'contacted'
+
+      list =
+      list.filter(
+        e =>
+        e.contact === 'contacted'
       );
+
       break;
+
 
     case 'accepted':
-      list = list.filter(
-        e => e.flight === 'accepted'
+
+      list =
+      list.filter(
+        e =>
+        e.flight === 'accepted'
       );
+
       break;
 
+
     case 'refused':
-      list = list.filter(
-        e => e.flight === 'refused'
+
+      list =
+      list.filter(
+        e =>
+        e.flight === 'refused'
       );
+
       break;
   }
 
 
-  /* =======================================================
-   T RI  *
-   ======================================================= */
+  /*
+   * Tri
+   */
 
   list.sort(
     (a, b) => {
 
       const dateA =
       new Date(
-        `${a.date || '9999-12-31'}T${a.startTime || '00:00'}`
+        `${a.date || '9999-12-31'}T${
+          a.startTime || '00:00'
+        }`
       );
+
 
       const dateB =
       new Date(
-        `${b.date || '9999-12-31'}T${b.startTime || '00:00'}`
+        `${b.date || '9999-12-31'}T${
+          b.startTime || '00:00'
+        }`
       );
+
 
       return (
         dateA - dateB ||
-        potentialLevel(b) - potentialLevel(a) ||
+        potentialLevel(b) -
+        potentialLevel(a) ||
         Number(a.distance || 0) -
         Number(b.distance || 0)
       );
@@ -726,20 +1406,25 @@ function render() {
   );
 
 
-  /* =======================================================
-   S TATI*STIQUES / FILTRES RAPIDES
-   ======================================================= */
+  /*
+   * Statistiques
+   */
 
-  const within = events.filter(
-    e => Number(e.distance) <= max
+  const within =
+  events.filter(
+    e =>
+    Number(e.distance) <= max
   );
 
+
   const quick = [
+
     [
       'all',
       '📅',
       within.length
     ],
+
     [
       'outdoor',
       '🚁',
@@ -747,27 +1432,34 @@ function render() {
         e => e.outdoor
       ).length
     ],
+
     [
       'potential',
       '★',
       within.filter(
-        e => potentialLevel(e) >= 1
+        e =>
+        potentialLevel(e) >= 1
       ).length
     ],
+
     [
       'high',
       '★★',
       within.filter(
-        e => potentialLevel(e) === 2
+        e =>
+        potentialLevel(e) === 2
       ).length
     ],
+
     [
       'very-high',
       '★★★',
       within.filter(
-        e => potentialLevel(e) === 3
+        e =>
+        potentialLevel(e) === 3
       ).length
     ],
+
     [
       'fav',
       '⭐',
@@ -775,6 +1467,7 @@ function render() {
         e => e.favorite
       ).length
     ],
+
     [
       'todo',
       '📞',
@@ -785,7 +1478,9 @@ function render() {
   ];
 
 
-  const stats = $('#stats');
+  const stats =
+  $('#stats');
+
 
   if (stats) {
 
@@ -813,32 +1508,33 @@ function render() {
     ).join('');
 
 
-    /*
-     * Un seul gestionnaire par bouton.
-     */
     stats
     .querySelectorAll('.stat')
     .forEach(button => {
 
-      button.onclick = () => {
+      button.onclick =
+      () => {
+
         quickFilter(
           button.dataset.filter
         );
       };
-
     });
   }
 
 
-  /* =======================================================
-   E VENE*MENTS
-   ======================================================= */
+  /*
+   * Liste
+   */
 
-  const box = $('#events');
+  const box =
+  $('#events');
+
 
   if (!box) {
     return;
   }
+
 
   box.innerHTML = '';
 
@@ -855,17 +1551,16 @@ function render() {
   const template =
   $('#eventTemplate');
 
+
   if (!template) {
+
     console.error(
       'eventTemplate introuvable'
     );
+
     return;
   }
 
-
-  /*
-   * Création des cartes.
-   */
 
   const fragment =
   document.createDocumentFragment();
@@ -874,124 +1569,169 @@ function render() {
   for (const e of list) {
 
     const node =
-    template.content.cloneNode(true);
+    template.content.cloneNode(
+      true
+    );
+
 
     const level =
     potentialLevel(e);
 
 
-    /* Date */
+    /*
+     * DATE
+     */
 
-    const dateElement =
-    node.querySelector('.date');
+    const date =
+    node.querySelector(
+      '.date'
+    );
 
-    if (dateElement) {
 
-      dateElement.textContent =
+    if (date) {
+
+      date.textContent =
       fmtDate(e.date) +
       (
         e.startTime
-        ? ' · ' + e.startTime
+        ? ' · ' +
+        e.startTime
         : ''
       );
     }
 
 
-    /* Titre */
+    /*
+     * TITRE
+     */
 
-    const titleElement =
-    node.querySelector('.title');
+    const title =
+    node.querySelector(
+      '.title'
+    );
 
-    if (titleElement) {
-      titleElement.textContent =
-      e.title || 'Événement';
+
+    if (title) {
+
+      title.textContent =
+      e.title ||
+      'Événement';
     }
 
 
-    /* Lieu */
+    /*
+     * LIEU
+     */
 
-    const placeElement =
-    node.querySelector('.place');
+    const place =
+    node.querySelector(
+      '.place'
+    );
 
-    if (placeElement) {
 
-      placeElement.textContent =
+    if (place) {
+
+      place.textContent =
       '📍 ' +
       (e.place || '') +
       (
         e.address
-        ? ' — ' + e.address
+        ? ' — ' +
+        e.address
         : ''
       );
     }
 
 
-    /* Description */
+    /*
+     * DESCRIPTION
+     */
 
-    const descriptionElement =
-    node.querySelector('.description');
+    const description =
+    node.querySelector(
+      '.description'
+    );
 
-    if (descriptionElement) {
 
-      descriptionElement.textContent =
-      e.description || '';
+    if (description) {
+
+      description.textContent =
+      e.description ||
+      '';
     }
 
 
-    /* Distance */
+    /*
+     * DISTANCE
+     */
 
-    const distanceElement =
+    const distance =
     node.querySelector(
       '.distance-badge'
     );
 
-    if (distanceElement) {
 
-      distanceElement.textContent =
+    if (distance) {
+
+      distance.textContent =
       `${e.distance} km`;
     }
 
 
-    /* Potentiel */
+    /*
+     * POTENTIEL
+     */
 
-    const potentialElement =
+    const potential =
     node.querySelector(
       '.potential-badge'
     );
 
-    if (potentialElement) {
 
-      potentialElement.textContent =
-      potentialLabel(level);
+    if (potential) {
 
-      potentialElement.className =
+      potential.textContent =
+      potentialLabel(
+        level
+      );
+
+
+      potential.className =
       'potential-badge ' +
-      potentialClass(level);
+      potentialClass(
+        level
+      );
     }
 
 
-    /* Extérieur / intérieur */
+    /*
+     * EXTÉRIEUR
+     */
 
-    const outdoorElement =
+    const outdoor =
     node.querySelector(
       '.outdoor-badge'
     );
 
-    if (outdoorElement) {
 
-      outdoorElement.textContent =
+    if (outdoor) {
+
+      outdoor.textContent =
       e.outdoor
       ? '🚁 Extérieur'
       : '🏠 Intérieur';
     }
 
 
-    /* Contact */
+    /*
+     * CONTACT
+     */
 
     const contactBadge =
     node.querySelector(
       '.contact-badge'
     );
+
 
     if (contactBadge) {
 
@@ -1002,12 +1742,15 @@ function render() {
     }
 
 
-    /* Vol */
+    /*
+     * VOL
+     */
 
     const flightBadge =
     node.querySelector(
       '.flight-badge'
     );
+
 
     if (flightBadge) {
 
@@ -1016,69 +1759,119 @@ function render() {
     }
 
 
-    /* Favori */
+    /*
+     * FAVORI
+     */
 
-    const favoriteButton =
-    node.querySelector('.fav');
+    const favorite =
+    node.querySelector(
+      '.fav'
+    );
 
-    if (favoriteButton) {
 
-      favoriteButton.textContent =
+    if (favorite) {
+
+      favorite.textContent =
       e.favorite
       ? '★'
       : '☆';
 
-      favoriteButton.classList.toggle(
+
+      favorite.classList.toggle(
         'active',
         e.favorite
       );
 
 
-      favoriteButton.onclick = () => {
+      favorite.onclick =
+      async () => {
 
         e.favorite =
         !e.favorite;
 
-        saveEventState(e);
 
         /*
-         * Pas de délai :
-         * le rendu est immédiat.
+         * Sauvegarde locale immédiate.
          */
+
+        saveLocalEvent(e);
+
+
+        /*
+         * Invalidation apprentissage.
+         */
+
+        learningCache = null;
+        potentialCache.clear();
+
+
+        /*
+         * On rafraîchit immédiatement.
+         */
+
         render();
+
+
+        /*
+         * Puis cloud en arrière-plan.
+         */
+
+        await saveEventState(
+          e
+        );
       };
     }
 
 
-    /* Contact */
+    /*
+     * CONTACT
+     */
 
-    const contactButton =
-    node.querySelector('.contact');
+    const contact =
+    node.querySelector(
+      '.contact'
+    );
 
-    if (contactButton) {
 
-      contactButton.onclick = () => {
+    if (contact) {
+
+      contact.onclick =
+      async () => {
 
         e.contact =
-        e.contact === 'contacted'
+        e.contact ===
+        'contacted'
         ? 'todo'
         : 'contacted';
 
-        saveEventState(e);
+
+        saveLocalEvent(e);
+
 
         render();
+
+
+        await saveEventState(
+          e
+        );
       };
     }
 
 
-    /* Vol */
+    /*
+     * VOL
+     */
 
-    const flightButton =
-    node.querySelector('.flight');
+    const flight =
+    node.querySelector(
+      '.flight'
+    );
 
-    if (flightButton) {
 
-      flightButton.onclick = () => {
+    if (flight) {
+
+      flight.onclick =
+      async () => {
 
         const states = [
           'unknown',
@@ -1087,59 +1880,86 @@ function render() {
           'refused'
         ];
 
-        const currentIndex =
+
+        const index =
         states.indexOf(
           e.flight
         );
 
+
         e.flight =
         states[
-          (currentIndex + 1) %
+          (index + 1) %
           states.length
         ];
 
-        saveEventState(e);
+
+        saveLocalEvent(e);
+
 
         render();
+
+
+        await saveEventState(
+          e
+        );
       };
     }
 
 
-    /* Détails */
+    /*
+     * DETAILS
+     */
 
-    const detailsButton =
-    node.querySelector('.details');
+    const details =
+    node.querySelector(
+      '.details'
+    );
 
-    if (detailsButton) {
 
-      detailsButton.onclick = () => {
+    if (details) {
+
+      details.onclick =
+      () => {
 
         const reasons =
         Array.isArray(
           e.droneReasons
         )
-        ? e.droneReasons.join(', ')
+        ? e.droneReasons.join(
+          ', '
+        )
         : '';
 
+
         alert(
+
           `${e.title || 'Événement'}\n` +
+
           `${e.place || ''}` +
+
           (
             e.address
             ? ` — ${e.address}`
             : ''
           ) +
+
           `\n` +
+
           `${fmtDate(e.date)}` +
+
           (
             e.startTime
             ? ` · ${e.startTime}`
             : ''
           ) +
+
           `\n\n` +
 
           `Potentiel drone : ` +
+
           `${potentialLabel(level)} ` +
+
           `(${e.droneScore || 0}/10)\n` +
 
           (
@@ -1155,11 +1975,14 @@ function render() {
           ) +
 
           `Contact : ` +
+
           (
-            e.contact === 'contacted'
+            e.contact ===
+            'contacted'
             ? 'Contacté'
             : 'À contacter'
           ) +
+
           `\n` +
 
           `Drone : ${e.flight}` +
@@ -1186,15 +2009,19 @@ function render() {
     }
 
 
-    fragment.appendChild(node);
+    fragment.appendChild(
+      node
+    );
   }
 
 
   /*
-   * Un seul ajout au DOM au lieu de modifier
-   * le DOM à chaque événement.
+   * Un seul ajout au DOM.
    */
-  box.appendChild(fragment);
+
+  box.appendChild(
+    fragment
+  );
 }
 
 
@@ -1204,6 +2031,7 @@ function render() {
 
 const distanceElement =
 $('#distance');
+
 
 if (distanceElement) {
 
@@ -1215,6 +2043,7 @@ if (distanceElement) {
 const statusElement =
 $('#statusFilter');
 
+
 if (statusElement) {
 
   statusElement.onchange =
@@ -1224,6 +2053,7 @@ if (statusElement) {
 
 const refreshButton =
 $('#refresh');
+
 
 if (refreshButton) {
 
@@ -1243,6 +2073,7 @@ if (
   navigator.serviceWorker
   .register('sw.js')
   .catch(error => {
+
     console.warn(
       'Service Worker :',
       error
@@ -1256,4 +2087,11 @@ if (
  ========================================================= */
 
 render();
+
+/*
+ * Chargement des événements.
+ * La synchronisation Supabase est lancée
+ * automatiquement par refresh().
+ */
+
 refresh();
