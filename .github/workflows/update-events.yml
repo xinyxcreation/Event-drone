@@ -12,20 +12,28 @@ jobs:
   update-events:
     runs-on: ubuntu-latest
     steps:
-      - name: Récupérer le dépôt
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Télécharger les événements Loire-Atlantique
+      - name: Télécharger les données
         run: |
           mkdir -p data
-          curl -L --fail --retry 3 \
-            "https://data.loire-atlantique.fr/api/explore/v2.1/catalog/datasets/793866443_fetes-et-manifestations-en-loire-atlantique/exports/json?limit=10000" \
-            -o data/source-events.json
+          curl -L --fail --retry 3             "https://data.loire-atlantique.fr/api/explore/v2.1/catalog/datasets/793866443_fetes-et-manifestations-en-loire-atlantique/exports/json?limit=10000"             -o data/source-events.json
 
-      - name: Générer events.json autour de Châteaubriant
+      - name: Générer les événements
         run: python3 scripts/build_events.py
 
-      - name: Publier les événements
+      - name: Vérifier le résultat
+        run: |
+          python3 - <<'PY'
+          import json
+          d=json.load(open("events.json"))
+          n=len(d.get("events",[]))
+          print(f"{n} événements générés")
+          if n == 0:
+              raise SystemExit("ERREUR: 0 événement généré")
+          PY
+
+      - name: Publier
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
