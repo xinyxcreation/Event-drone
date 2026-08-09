@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 CENTER_LAT, CENTER_LON = 47.718, -1.376
-MAX_KM, DAYS = 150, 45
+MAX_KM, DAYS = 100, 30
 
 
 def haversine(a, b, c, d):
