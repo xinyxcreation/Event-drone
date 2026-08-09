@@ -15,7 +15,6 @@ permissions:
 jobs:
   update-events:
     runs-on: ubuntu-latest
-
     steps:
       - name: Récupérer le dépôt
         uses: actions/checkout@v4
@@ -29,20 +28,18 @@ jobs:
       - name: Générer events.json
         run: python3 scripts/build_events.py
 
-      - name: Vérifier
+      - name: Vérifier les événements
         run: |
           python3 - <<'PY'
           import json
-          d=json.load(open("events.json", encoding="utf-8"))
-          events=d.get("events",[])
-          print(f"Événements générés : {len(events)}")
-          if not events:
-              raise SystemExit("ERREUR : aucun événement généré")
-          for e in events[:10]:
-              print(f"- {e['date']} | {e['title']} | {e['place']} | {e['distance']} km")
+          d=json.load(open("events.json",encoding="utf-8"))
+          n=len(d.get("events",[]))
+          print("Événements dans events.json :",n)
+          if n == 0:
+              raise SystemExit("Aucun événement généré")
           PY
 
-      - name: Publier
+      - name: Publier events.json
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
