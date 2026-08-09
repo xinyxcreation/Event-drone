@@ -1,4 +1,4 @@
-name: Mise à jour des événements
+name: Mise à jour automatique des événements
 
 on:
   schedule:
@@ -11,32 +11,34 @@ permissions:
 jobs:
   update-events:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Télécharger les données
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Télécharger les événements Loire-Atlantique
         run: |
           mkdir -p data
           curl -L --fail --retry 3             "https://data.loire-atlantique.fr/api/explore/v2.1/catalog/datasets/793866443_fetes-et-manifestations-en-loire-atlantique/exports/json?limit=10000"             -o data/source-events.json
 
-      - name: Générer les événements
+      - name: Générer events.json
         run: python3 scripts/build_events.py
 
-      - name: Vérifier le résultat
+      - name: Vérifier
         run: |
           python3 - <<'PY'
           import json
-          d=json.load(open("events.json"))
-          n=len(d.get("events",[]))
-          print(f"{n} événements générés")
+          d=json.load(open("events.json", encoding="utf-8"))
+          n=len(d["events"])
+          print(f"OK: {n} événements")
           if n == 0:
-              raise SystemExit("ERREUR: 0 événement généré")
+              raise SystemExit("Aucun événement généré")
           PY
 
-      - name: Publier
+      - name: Publier automatiquement
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add events.json data/source-events.json
-          git diff --cached --quiet || git commit -m "chore: mise à jour des événements"
+          git add events.json
+          git diff --cached --quiet || git commit -m "chore: actualisation automatique des événements"
           git push
