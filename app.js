@@ -2,6 +2,8 @@ const STORAGE = 'events-drone-user-v5';
 const LEARN_THRESHOLD = 3;
 
 let events = [];
+let learningCache = null;
+let potentialCache = new Map();
 
 const fallback = [
   {
@@ -87,11 +89,11 @@ const fallback = [
 }
 ];
 
-const $ = s => document.querySelector(s);
+const $ = selector => document.querySelector(selector);
 
 
 /* =========================================================
- S TOCKAG*E UTILISATEUR
+ U TILISA*TEUR / LOCAL STORAGE
  ========================================================= */
 
 function loadUser() {
@@ -105,44 +107,40 @@ function loadUser() {
 }
 
 
-function saveUser() {
+/*
+ * Sauvegarde uniquement l'événement modifié.
+ *
+ * Avant :
+ *   on réécrivait les ~9 000 événements à chaque clic.
+ *
+ * Maintenant :
+ *   on écrit uniquement l'état de l'événement concerné.
+ */
+function saveEventState(e) {
+  const user = loadUser();
+
+  user[e.id] = {
+    favorite: !!e.favorite,
+    contact: e.contact || 'todo',
+    flight: e.flight || 'unknown'
+  };
+
   localStorage.setItem(
     STORAGE,
-    JSON.stringify(
-      Object.fromEntries(
-        events.map(e => [
-          e.id,
-          {
-            favorite: !!e.favorite,
-            contact: e.contact || 'todo',
-            flight: e.flight || 'unknown'
-          }
-        ])
-      )
-    )
+    JSON.stringify(user)
   );
+
+  learningCache = null;
+  potentialCache.clear();
 }
 
 
 /* =========================================================
- O UTILS *
+ T EXTE  *
  ========================================================= */
 
-function fmtDate(d) {
-  const x = new Date(d + 'T12:00:00');
-
-  return isNaN(x)
-  ? String(d || 'Date inconnue')
-  : x.toLocaleDateString('fr-FR', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'long'
-  });
-}
-
-
-function normalizeText(s) {
-  return String(s || '')
+function normalizeText(value) {
+  return String(value || '')
   .toLowerCase()
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
@@ -151,50 +149,6 @@ function normalizeText(s) {
   .trim();
 }
 
-
-/* =========================================================
- D ÉDOUBL*ONNAGE
- =========================================================
-
- On ne tient volontairement PAS compte :
- - de l'id
- - de la distance
-
- Deux fiches identiques à 0 km et 1 km seront donc fusionnées.
-
- En revanche :
- - date différente = événement différent
- - horaire différent = événement différent
- - lieu différent = événement différent
- */
-
-function deduplicateEvents(list) {
-  const seen = new Set();
-
-  return list.filter(e => {
-    const key = [
-      normalizeText(e.title),
-                     e.date || '',
-                     e.startTime || '',
-                     normalizeText(e.place),
-                     normalizeText(e.address),
-                     normalizeText(e.address2),
-                     normalizeText(e.address3)
-    ].join('|');
-
-    if (seen.has(key)) {
-      return false;
-    }
-
-    seen.add(key);
-    return true;
-  });
-}
-
-
-/* =========================================================
- A PPRENT*ISSAGE / POTENTIEL
- ========================================================= */
 
 function categoryKey(e) {
   return normalizeText(
@@ -208,8 +162,8 @@ function meaningfulWords(e) {
     `${e.title || ''} ${e.category || ''}`
   )
   .split(' ')
-  .filter(w =>
-  w.length >= 5 &&
+  .filter(word =>
+  word.length >= 5 &&
   ![
     'evenement',
     'evenements',
@@ -220,76 +174,262 @@ function meaningfulWords(e) {
     'festival',
     'association',
     'associations'
-  ].includes(w)
+  ].includes(word)
   );
 }
 
 
-function learning() {
-  const u = loadUser();
+/* =========================================================
+ D ATES  *
+ ========================================================= */
 
-  const category = {};
-  const words = {};
+function fmtDate(date) {
+  const x = new Date(
+    String(date || '') + 'T12:00:00'
+  );
 
-  for (const e of events) {
-    if (!e.favorite) continue;
-
-    const c = categoryKey(e);
-
-    category[c] = (category[c] || 0) + 1;
-
-    for (const w of new Set(meaningfulWords(e))) {
-      words[w] = (words[w] || 0) + 1;
-    }
+  if (isNaN(x)) {
+    return String(date || 'Date inconnue');
   }
 
-  return {
-    category,
-    words
-  };
+  return x.toLocaleDateString(
+    'fr-FR',
+    {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'long'
+    }
+  );
 }
 
 
+/* =========================================================
+ E TAT UT*ILISATEUR
+ ========================================================= */
+
+function applyUserState(list) {
+  const user = loadUser();
+
+  return list.map(e => {
+    const state = user[e.id] || {};
+
+    return {
+      ...e,
+
+      favorite: !!state.favorite,
+
+      contact:
+      state.contact ||
+      e.contact ||
+      'todo',
+
+      flight:
+      state.flight ||
+      e.flight ||
+      'unknown'
+    };
+  });
+}
+
+
+/* =========================================================
+ D EDOUBL*ONNAGE
+ ========================================================= */
+
+/*
+ * Certains événements peuvent apparaître plusieurs fois
+ * dans la source avec des IDs différents.
+ *
+ * On construit une clé avec :
+ * titre + date + heure + lieu + adresse
+ */
+
+function eventDuplicateKey(e) {
+  return normalizeText(
+    [
+      e.title,
+      e.date,
+      e.startTime,
+      e.place,
+      e.address
+    ]
+    .filter(Boolean)
+    .join('|')
+  );
+}
+
+
+function deduplicateEvents(list) {
+  const seen = new Set();
+  const result = [];
+
+  for (const event of list) {
+    const key = eventDuplicateKey(event);
+
+    if (!key) {
+      result.push(event);
+      continue;
+    }
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    result.push(event);
+  }
+
+  return result;
+}
+
+
+/* =========================================================
+ F ALLBAC*K
+ ========================================================= */
+
+function mergeFallback(list) {
+  const existingKeys = new Set(
+    list.map(eventDuplicateKey)
+  );
+
+  const additions = fallback.filter(
+    event => !existingKeys.has(
+      eventDuplicateKey(event)
+    )
+  );
+
+  return deduplicateEvents([
+    ...list,
+    ...additions
+  ]);
+}
+
+
+/* =========================================================
+ A PPRENT*ISSAGE
+ ========================================================= */
+
+/*
+ * Le système apprend des favoris.
+ *
+ * 3 favoris similaires :
+ *
+ * catégorie régulièrement favorite
+ *       OU
+ * mots régulièrement présents
+ *
+ * => ★★★ Très haut potentiel
+ */
+
+function learning() {
+  if (learningCache) {
+    return learningCache;
+  }
+
+  const category = Object.create(null);
+  const words = Object.create(null);
+
+  for (const e of events) {
+    if (!e.favorite) {
+      continue;
+    }
+
+    const categoryName = categoryKey(e);
+
+    category[categoryName] =
+    (category[categoryName] || 0) + 1;
+
+    const uniqueWords = new Set(
+      meaningfulWords(e)
+    );
+
+    for (const word of uniqueWords) {
+      words[word] =
+      (words[word] || 0) + 1;
+    }
+  }
+
+  learningCache = {
+    category,
+    words
+  };
+
+  return learningCache;
+}
+
+
+/* =========================================================
+ P OTENTI*EL
+ ========================================================= */
+
 function potentialLevel(e) {
-  const l = learning();
 
   /*
-   * Un événement régulièrement mis en favori
-   * devient très haut potentiel.
+   * Cache individuel.
+   *
+   * Un même événement peut être demandé
+   * plusieurs dizaines de fois pendant render().
+   */
+  if (potentialCache.has(e.id)) {
+    return potentialCache.get(e.id);
+  }
+
+  const learned = learning();
+
+  let level = 0;
+
+  /*
+   * ★★★
+   * Apprentissage automatique.
    */
 
   if (
-    (l.category[categoryKey(e)] || 0) >=
-    LEARN_THRESHOLD
+    (learned.category[categoryKey(e)] || 0)
+    >= LEARN_THRESHOLD
   ) {
-    return 3;
+    level = 3;
   }
 
-  for (const w of meaningfulWords(e)) {
-    if ((l.words[w] || 0) >= LEARN_THRESHOLD) {
-      return 3;
+  if (level < 3) {
+    for (const word of meaningfulWords(e)) {
+
+      if (
+        (learned.words[word] || 0)
+        >= LEARN_THRESHOLD
+      ) {
+        level = 3;
+        break;
+      }
     }
   }
 
   /*
-   * Potentiel provenant de la source.
+   * Potentiel fourni par la source.
    */
 
-  if (
-    e.dronePotential === 'high' ||
-    Number(e.droneScore || 0) >= 6
-  ) {
-    return 2;
+  if (level < 3) {
+
+    if (
+      e.dronePotential === 'high' ||
+      Number(e.droneScore || 0) >= 6
+    ) {
+      level = 2;
+    }
+
+    else if (
+      e.dronePotential === 'medium' ||
+      Number(e.droneScore || 0) >= 3
+    ) {
+      level = 1;
+    }
   }
 
-  if (
-    e.dronePotential === 'medium' ||
-    Number(e.droneScore || 0) >= 3
-  ) {
-    return 1;
-  }
+  potentialCache.set(
+    e.id,
+    level
+  );
 
-  return 0;
+  return level;
 }
 
 
@@ -314,7 +454,7 @@ function potentialClass(level) {
 
 
 /* =========================================================
- S TATUT *DRONE
+ E TATS  *
  ========================================================= */
 
 function statusLabel(e) {
@@ -327,18 +467,15 @@ function statusLabel(e) {
 }
 
 
-/* =========================================================
- C ONTACT*
- ========================================================= */
-
 /*
- * « À contacter » =
- * uniquement les favoris qui ne sont pas encore contactés.
+ * "À contacter" = favoris non encore contactés.
  */
 
 function isToContact(e) {
-  return !!e.favorite &&
-  e.contact !== 'contacted';
+  return (
+    !!e.favorite &&
+    e.contact !== 'contacted'
+  );
 }
 
 
@@ -348,70 +485,105 @@ function isPotential(e) {
 
 
 /* =========================================================
- F ILTRES* RAPIDES
+ F ILTRE *RAPIDE
  ========================================================= */
 
 function quickFilter(filter) {
-  $('#statusFilter').value = filter;
+
+  const select = $('#statusFilter');
+
+  if (!select) {
+    return;
+  }
+
+  select.value = filter;
+
   render();
 }
 
 
 /* =========================================================
- C HARGEM*ENT DES DONNÉES
+ A CTUALI*SATION
  ========================================================= */
 
 async function refresh() {
-  $('#updated').textContent =
-  '🔄 Actualisation…';
+
+  if ($('#updated')) {
+    $('#updated').textContent =
+    '🔄 Actualisation…';
+  }
 
   try {
-    const r = await fetch(
+
+    const response = await fetch(
       './events.json?ts=' + Date.now(),
-                          {
-                            cache: 'no-store'
-                          }
+                                 {
+                                   cache: 'no-store'
+                                 }
     );
 
-    if (!r.ok) {
-      throw new Error(r.status);
+    if (!response.ok) {
+      throw new Error(
+        'HTTP ' + response.status
+      );
     }
 
-    const data = await r.json();
+    const data = await response.json();
+
+    let list = Array.isArray(data.events)
+    ? data.events
+    : [];
 
     /*
-     * Chargement :
-     * source JSON
-     * + fallback
-     * + état utilisateur
-     * + suppression des doublons
+     * Dédoublonnage avant tout traitement.
      */
+    list = deduplicateEvents(list);
 
-    events = deduplicateEvents(
-      applyUserState(
-        mergeFallback(data.events || [])
-      )
+    /*
+     * Ajout des événements locaux
+     * qui ne sont pas déjà présents.
+     */
+    list = mergeFallback(list);
+
+    /*
+     * Application des favoris / contacts / vols.
+     */
+    events = applyUserState(list);
+
+    learningCache = null;
+    potentialCache.clear();
+
+    if ($('#updated')) {
+
+      $('#updated').textContent =
+      `✓ ${events.length} événements · ` +
+      new Date().toLocaleTimeString(
+        'fr-FR',
+        {
+          hour: '2-digit',
+          minute: '2-digit'
+        }
+      );
+    }
+
+  } catch (error) {
+
+    console.error(
+      'Erreur chargement events.json:',
+      error
     );
 
-    $('#updated').textContent =
-    `✓ ${events.length} événements · ` +
-    new Date().toLocaleTimeString(
-      'fr-FR',
-      {
-        hour: '2-digit',
-        minute: '2-digit'
-      }
+    events = applyUserState(
+      deduplicateEvents(fallback)
     );
 
-  } catch (e) {
-    console.error(e);
+    learningCache = null;
+    potentialCache.clear();
 
-    events = deduplicateEvents(
-      applyUserState(fallback)
-    );
-
-    $('#updated').textContent =
-    '⚠️ events.json indisponible · données locales';
+    if ($('#updated')) {
+      $('#updated').textContent =
+      '⚠️ events.json indisponible · données locales';
+    }
   }
 
   render();
@@ -419,145 +591,144 @@ async function refresh() {
 
 
 /* =========================================================
- É TAT UT*ILISATEUR
- ========================================================= */
-
-function applyUserState(list) {
-  const u = loadUser();
-
-  return list.map(e => ({
-    ...e,
-
-    ...(u[e.id] || {}),
-
-                        /*
-                         * IMPORTANT :
-                         * on récupère bien l'état correspondant
-                         * à l'id de l'événement.
-                         */
-
-                        contact:
-                        u[e.id]?.contact ||
-                        e.contact ||
-                        'todo',
-
-                        flight:
-                        u[e.id]?.flight ||
-                        e.flight ||
-                        'unknown',
-
-                        favorite:
-                        !!u[e.id]?.favorite
-  }));
-}
-
-
-/* =========================================================
- F ALLBAC*K
- ========================================================= */
-
-function mergeFallback(list) {
-  const ids = new Set(
-    list.map(e => e.id)
-  );
-
-  return [
-    ...list,
-    ...fallback.filter(
-      e => !ids.has(e.id)
-    )
-  ];
-}
-
-
-/* =========================================================
- A FFICHA*GE
+ R ENDU  *
  ========================================================= */
 
 function render() {
-  const max =
-  Number($('#distance').value);
+
+  const distanceElement = $('#distance');
+  const filterElement = $('#statusFilter');
+
+  if (!distanceElement || !filterElement) {
+    return;
+  }
+
+  const max = Number(
+    distanceElement.value
+  );
 
   const filter =
-  $('#statusFilter').value;
+  filterElement.value;
 
+  /*
+   * Nouveau calcul d'apprentissage uniquement
+   * lorsqu'un état a changé.
+   */
+  learningCache = null;
+  potentialCache.clear();
+
+  /*
+   * Calcul du potentiel une seule fois par événement.
+   */
+  for (const e of events) {
+    potentialLevel(e);
+  }
+
+  /*
+   * Filtre distance.
+   */
   let list = events.filter(
     e => Number(e.distance) <= max
   );
 
+  /*
+   * Filtres.
+   */
 
-  /* ---------- Filtres ---------- */
+  switch (filter) {
 
-  if (filter === 'potential') {
-    list = list.filter(isPotential);
+    case 'potential':
+      list = list.filter(
+        e => potentialLevel(e) >= 1
+      );
+      break;
+
+    case 'high':
+      list = list.filter(
+        e => potentialLevel(e) === 2
+      );
+      break;
+
+    case 'very-high':
+      list = list.filter(
+        e => potentialLevel(e) === 3
+      );
+      break;
+
+    case 'medium':
+      list = list.filter(
+        e => potentialLevel(e) === 1
+      );
+      break;
+
+    case 'outdoor':
+      list = list.filter(
+        e => e.outdoor
+      );
+      break;
+
+    case 'fav':
+      list = list.filter(
+        e => e.favorite
+      );
+      break;
+
+    case 'todo':
+      list = list.filter(
+        isToContact
+      );
+      break;
+
+    case 'contacted':
+      list = list.filter(
+        e => e.contact === 'contacted'
+      );
+      break;
+
+    case 'accepted':
+      list = list.filter(
+        e => e.flight === 'accepted'
+      );
+      break;
+
+    case 'refused':
+      list = list.filter(
+        e => e.flight === 'refused'
+      );
+      break;
   }
 
-  if (filter === 'high') {
-    list = list.filter(
-      e => potentialLevel(e) === 2
-    );
-  }
 
-  if (filter === 'very-high') {
-    list = list.filter(
-      e => potentialLevel(e) === 3
-    );
-  }
-
-  if (filter === 'medium') {
-    list = list.filter(
-      e => potentialLevel(e) === 1
-    );
-  }
-
-  if (filter === 'outdoor') {
-    list = list.filter(
-      e => e.outdoor
-    );
-  }
-
-  if (filter === 'fav') {
-    list = list.filter(
-      e => e.favorite
-    );
-  }
-
-  if (filter === 'todo') {
-    list = list.filter(
-      isToContact
-    );
-  }
-
-  if (filter === 'contacted') {
-    list = list.filter(
-      e => e.contact === 'contacted'
-    );
-  }
-
-  if (filter === 'accepted') {
-    list = list.filter(
-      e => e.flight === 'accepted'
-    );
-  }
-
-  if (filter === 'refused') {
-    list = list.filter(
-      e => e.flight === 'refused'
-    );
-  }
-
-
-  /* ---------- Tri ---------- */
+  /* =======================================================
+   T RI  *
+   ======================================================= */
 
   list.sort(
-    (a, b) =>
-    new Date(a.date) - new Date(b.date) ||
-    potentialLevel(b) - potentialLevel(a) ||
-    Number(a.distance) - Number(b.distance)
+    (a, b) => {
+
+      const dateA =
+      new Date(
+        `${a.date || '9999-12-31'}T${a.startTime || '00:00'}`
+      );
+
+      const dateB =
+      new Date(
+        `${b.date || '9999-12-31'}T${b.startTime || '00:00'}`
+      );
+
+      return (
+        dateA - dateB ||
+        potentialLevel(b) - potentialLevel(a) ||
+        Number(a.distance || 0) -
+        Number(b.distance || 0)
+      );
+    }
   );
 
 
-  /* ---------- Statistiques ---------- */
+  /* =======================================================
+   S TATI*STIQUES / FILTRES RAPIDES
+   ======================================================= */
 
   const within = events.filter(
     e => Number(e.distance) <= max
@@ -580,7 +751,7 @@ function render() {
       'potential',
       '★',
       within.filter(
-        isPotential
+        e => potentialLevel(e) >= 1
       ).length
     ],
     [
@@ -614,303 +785,474 @@ function render() {
   ];
 
 
-  $('#stats').innerHTML =
-  quick.map(x =>
-  `<button
-  type="button"
-  class="stat ${filter === x[0] ? 'active' : ''}"
-  data-filter="${x[0]}"
-  >
-  <span class="stat-icon">${x[1]}</span>
-  <span>${x[2]}</span>
-  </button>`
-  ).join('');
+  const stats = $('#stats');
+
+  if (stats) {
+
+    stats.innerHTML =
+    quick.map(
+      item => `
+      <button
+      type="button"
+      class="stat ${
+        filter === item[0]
+        ? 'active'
+        : ''
+      }"
+      data-filter="${item[0]}"
+      >
+      <span class="stat-icon">
+      ${item[1]}
+      </span>
+
+      <span>
+      ${item[2]}
+      </span>
+      </button>
+      `
+    ).join('');
 
 
-  $('#stats')
-  .querySelectorAll('.stat')
-  .forEach(btn => {
-    btn.onclick = () =>
-    quickFilter(
-      btn.dataset.filter
-    );
-  });
+    /*
+     * Un seul gestionnaire par bouton.
+     */
+    stats
+    .querySelectorAll('.stat')
+    .forEach(button => {
+
+      button.onclick = () => {
+        quickFilter(
+          button.dataset.filter
+        );
+      };
+
+    });
+  }
 
 
-  /* ---------- Liste ---------- */
+  /* =======================================================
+   E VENE*MENTS
+   ======================================================= */
 
   const box = $('#events');
 
+  if (!box) {
+    return;
+  }
+
   box.innerHTML = '';
 
+
   if (!list.length) {
-    box.innerHTML =
+
+    box.textContent =
     'Aucun événement avec ces filtres.';
+
   return;
   }
 
 
-  /* ---------- Cartes ---------- */
+  const template =
+  $('#eventTemplate');
 
-  list.forEach(e => {
-    const n =
-    $('#eventTemplate')
-    .content
-    .cloneNode(true);
+  if (!template) {
+    console.error(
+      'eventTemplate introuvable'
+    );
+    return;
+  }
+
+
+  /*
+   * Création des cartes.
+   */
+
+  const fragment =
+  document.createDocumentFragment();
+
+
+  for (const e of list) {
+
+    const node =
+    template.content.cloneNode(true);
 
     const level =
     potentialLevel(e);
 
 
-    n.querySelector('.date')
-    .textContent =
-    fmtDate(e.date) +
-    (
-      e.startTime
-      ? ' · ' + e.startTime
-      : ''
+    /* Date */
+
+    const dateElement =
+    node.querySelector('.date');
+
+    if (dateElement) {
+
+      dateElement.textContent =
+      fmtDate(e.date) +
+      (
+        e.startTime
+        ? ' · ' + e.startTime
+        : ''
+      );
+    }
+
+
+    /* Titre */
+
+    const titleElement =
+    node.querySelector('.title');
+
+    if (titleElement) {
+      titleElement.textContent =
+      e.title || 'Événement';
+    }
+
+
+    /* Lieu */
+
+    const placeElement =
+    node.querySelector('.place');
+
+    if (placeElement) {
+
+      placeElement.textContent =
+      '📍 ' +
+      (e.place || '') +
+      (
+        e.address
+        ? ' — ' + e.address
+        : ''
+      );
+    }
+
+
+    /* Description */
+
+    const descriptionElement =
+    node.querySelector('.description');
+
+    if (descriptionElement) {
+
+      descriptionElement.textContent =
+      e.description || '';
+    }
+
+
+    /* Distance */
+
+    const distanceElement =
+    node.querySelector(
+      '.distance-badge'
     );
 
+    if (distanceElement) {
 
-    n.querySelector('.title')
-    .textContent =
-    e.title;
-
-
-    n.querySelector('.place')
-    .textContent =
-    '📍 ' +
-    e.place +
-    (
-      e.address
-      ? ' — ' + e.address
-      : ''
-    );
+      distanceElement.textContent =
+      `${e.distance} km`;
+    }
 
 
-    n.querySelector('.description')
-    .textContent =
-    e.description || '';
+    /* Potentiel */
 
-
-    n.querySelector('.distance-badge')
-    .textContent =
-    `${e.distance} km`;
-
-
-    /* ---------- Potentiel ---------- */
-
-    const pb =
-    n.querySelector(
+    const potentialElement =
+    node.querySelector(
       '.potential-badge'
     );
 
-    pb.textContent =
-    potentialLabel(level);
+    if (potentialElement) {
 
-    pb.className =
-    'potential-badge ' +
-    potentialClass(level);
+      potentialElement.textContent =
+      potentialLabel(level);
+
+      potentialElement.className =
+      'potential-badge ' +
+      potentialClass(level);
+    }
 
 
-    /* ---------- Extérieur ---------- */
+    /* Extérieur / intérieur */
 
-    n.querySelector(
+    const outdoorElement =
+    node.querySelector(
       '.outdoor-badge'
-    ).textContent =
-    e.outdoor
-    ? '🚁 Extérieur'
-    : '🏠 Intérieur';
+    );
+
+    if (outdoorElement) {
+
+      outdoorElement.textContent =
+      e.outdoor
+      ? '🚁 Extérieur'
+      : '🏠 Intérieur';
+    }
 
 
-    /* ---------- Contact ---------- */
+    /* Contact */
 
-    n.querySelector(
+    const contactBadge =
+    node.querySelector(
       '.contact-badge'
-    ).textContent =
-    e.contact === 'contacted'
-    ? '📞 Contacté'
-    : '📞 À contacter';
+    );
 
+    if (contactBadge) {
 
-    /* ---------- Drone ---------- */
-
-    n.querySelector(
-      '.flight-badge'
-    ).textContent =
-    statusLabel(e);
-
-
-    /* ---------- Favori ---------- */
-
-    n.querySelector(
-      '.fav'
-    ).textContent =
-    e.favorite
-    ? '★'
-    : '☆';
-
-
-    n.querySelector(
-      '.fav'
-    ).onclick = () => {
-      e.favorite =
-      !e.favorite;
-
-      saveUser();
-      render();
-    };
-
-
-    /* ---------- Contact ---------- */
-
-    n.querySelector(
-      '.contact'
-    ).onclick = () => {
-      e.contact =
+      contactBadge.textContent =
       e.contact === 'contacted'
-      ? 'todo'
-      : 'contacted';
-
-      saveUser();
-      render();
-    };
+      ? '📞 Contacté'
+      : '📞 À contacter';
+    }
 
 
-    /* ---------- Vol ---------- */
+    /* Vol */
 
-    n.querySelector(
-      '.flight'
-    ).onclick = () => {
-      const states = [
-        'unknown',
-        'asked',
-        'accepted',
-        'refused'
-      ];
+    const flightBadge =
+    node.querySelector(
+      '.flight-badge'
+    );
 
-      e.flight =
-      states[
-        (
-          states.indexOf(
-            e.flight
-          ) + 1
-        ) % states.length
-      ];
+    if (flightBadge) {
 
-      saveUser();
-      render();
-    };
+      flightBadge.textContent =
+      statusLabel(e);
+    }
 
 
-    /* ---------- Détails ---------- */
+    /* Favori */
 
-    n.querySelector(
-      '.details'
-    ).onclick = () => {
-      const reasons =
-      (e.droneReasons || [])
-      .join(', ');
+    const favoriteButton =
+    node.querySelector('.fav');
 
-      alert(
-        `${e.title}\n` +
-        `${e.place}` +
-        (
-          e.address
-          ? ' — ' + e.address
-          : ''
-        ) +
-        `\n` +
-        `${fmtDate(e.date)}` +
-        (
-          e.startTime
-          ? ' · ' + e.startTime
-          : ''
-        ) +
-        `\n\n` +
+    if (favoriteButton) {
 
-        `Potentiel drone : ` +
-        `${potentialLabel(level)} ` +
-        `(${e.droneScore || 0}/10)\n` +
+      favoriteButton.textContent =
+      e.favorite
+      ? '★'
+      : '☆';
 
-        (
-          reasons
-          ? `Indices : ${reasons}\n`
-          : ''
-        ) +
-
-        (
-          e.outdoor
-          ? 'Événement extérieur'
-          : 'Événement intérieur'
-        ) +
-        `\n` +
-
-        `Contact : ` +
-        (
-          e.contact === 'contacted'
-          ? 'Contacté'
-          : 'À contacter'
-        ) +
-        `\n` +
-
-        `Drone : ${e.flight}` +
-
-        (
-          e.phone
-          ? '\nTéléphone : ' +
-          e.phone
-          : ''
-        ) +
-
-        (
-          e.email
-          ? '\nEmail : ' +
-          e.email
-          : ''
-        ) +
-
-        (
-          e.url
-          ? '\n\n' + e.url
-          : ''
-        )
+      favoriteButton.classList.toggle(
+        'active',
+        e.favorite
       );
-    };
 
 
-    box.appendChild(n);
-  });
+      favoriteButton.onclick = () => {
+
+        e.favorite =
+        !e.favorite;
+
+        saveEventState(e);
+
+        /*
+         * Pas de délai :
+         * le rendu est immédiat.
+         */
+        render();
+      };
+    }
+
+
+    /* Contact */
+
+    const contactButton =
+    node.querySelector('.contact');
+
+    if (contactButton) {
+
+      contactButton.onclick = () => {
+
+        e.contact =
+        e.contact === 'contacted'
+        ? 'todo'
+        : 'contacted';
+
+        saveEventState(e);
+
+        render();
+      };
+    }
+
+
+    /* Vol */
+
+    const flightButton =
+    node.querySelector('.flight');
+
+    if (flightButton) {
+
+      flightButton.onclick = () => {
+
+        const states = [
+          'unknown',
+          'asked',
+          'accepted',
+          'refused'
+        ];
+
+        const currentIndex =
+        states.indexOf(
+          e.flight
+        );
+
+        e.flight =
+        states[
+          (currentIndex + 1) %
+          states.length
+        ];
+
+        saveEventState(e);
+
+        render();
+      };
+    }
+
+
+    /* Détails */
+
+    const detailsButton =
+    node.querySelector('.details');
+
+    if (detailsButton) {
+
+      detailsButton.onclick = () => {
+
+        const reasons =
+        Array.isArray(
+          e.droneReasons
+        )
+        ? e.droneReasons.join(', ')
+        : '';
+
+        alert(
+          `${e.title || 'Événement'}\n` +
+          `${e.place || ''}` +
+          (
+            e.address
+            ? ` — ${e.address}`
+            : ''
+          ) +
+          `\n` +
+          `${fmtDate(e.date)}` +
+          (
+            e.startTime
+            ? ` · ${e.startTime}`
+            : ''
+          ) +
+          `\n\n` +
+
+          `Potentiel drone : ` +
+          `${potentialLabel(level)} ` +
+          `(${e.droneScore || 0}/10)\n` +
+
+          (
+            reasons
+            ? `Indices : ${reasons}\n`
+            : ''
+          ) +
+
+          (
+            e.outdoor
+            ? 'Événement extérieur\n'
+            : 'Événement intérieur\n'
+          ) +
+
+          `Contact : ` +
+          (
+            e.contact === 'contacted'
+            ? 'Contacté'
+            : 'À contacter'
+          ) +
+          `\n` +
+
+          `Drone : ${e.flight}` +
+
+          (
+            e.phone
+            ? `\nTéléphone : ${e.phone}`
+            : ''
+          ) +
+
+          (
+            e.email
+            ? `\nEmail : ${e.email}`
+            : ''
+          ) +
+
+          (
+            e.url
+            ? `\n\n${e.url}`
+            : ''
+          )
+        );
+      };
+    }
+
+
+    fragment.appendChild(node);
+  }
+
+
+  /*
+   * Un seul ajout au DOM au lieu de modifier
+   * le DOM à chaque événement.
+   */
+  box.appendChild(fragment);
 }
 
 
 /* =========================================================
- É VÉNEME*NTS UI
+ C ONTROL*ES
  ========================================================= */
 
-$('#distance').onchange =
-render;
+const distanceElement =
+$('#distance');
 
-$('#statusFilter').onchange =
-render;
+if (distanceElement) {
 
-$('#refresh').onclick =
-refresh;
+  distanceElement.onchange =
+  render;
+}
+
+
+const statusElement =
+$('#statusFilter');
+
+if (statusElement) {
+
+  statusElement.onchange =
+  render;
+}
+
+
+const refreshButton =
+$('#refresh');
+
+if (refreshButton) {
+
+  refreshButton.onclick =
+  refresh;
+}
 
 
 /* =========================================================
  S ERVICE* WORKER
  ========================================================= */
 
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register(
-    './sw.js'
-  );
+if (
+  'serviceWorker' in navigator
+) {
+
+  navigator.serviceWorker
+  .register('sw.js')
+  .catch(error => {
+    console.warn(
+      'Service Worker :',
+      error
+    );
+  });
 }
 
 
 /* =========================================================
- D ÉMARRA*GE
+ D EMARRA*GE
  ========================================================= */
 
 render();
