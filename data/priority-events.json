@@ -1,0 +1,83 @@
+[
+  {
+    "date": "09/08/2026",
+    "title": "Route 44 et ses motards",
+    "category": "Rassemblement / animation",
+    "place": "Sion-les-Mines",
+    "postalCode": "44590",
+    "latitude": 47.7332,
+    "longitude": -1.5916,
+    "description": "Rassemblement / vide-grenier.",
+    "source": "agenda-local"
+  },
+  {
+    "date": "23/08/2026",
+    "title": "Fanfare Tzila Brass",
+    "category": "Animation musicale",
+    "place": "Châteaubriant",
+    "postalCode": "44110",
+    "latitude": 47.718,
+    "longitude": -1.376,
+    "description": "Animation musicale en plein air.",
+    "source": "agenda-local"
+  },
+  {
+    "date": "28/08/2026",
+    "title": "Ciné plein-air – Un p’tit truc en plus",
+    "category": "Ciné plein-air",
+    "place": "Châteaubriant",
+    "postalCode": "44110",
+    "latitude": 47.718,
+    "longitude": -1.376,
+    "address": "Promenade du Duc d’Aumale",
+    "startTime": "21:00",
+    "description": "Projection en plein air.",
+    "source": "agenda-local"
+  },
+  {
+    "date": "29/08/2026",
+    "title": "Forum des associations",
+    "category": "Forum / associations",
+    "place": "Châteaubriant",
+    "postalCode": "44110",
+    "latitude": 47.718,
+    "longitude": -1.376,
+    "address": "Halle de Béré",
+    "description": "Près de 100 associations.",
+    "source": "agenda-local"
+  },
+  {
+    "date": "05/09/2026",
+    "title": "Nozay s’Expose !",
+    "category": "Animation locale / exposition",
+    "place": "Nozay",
+    "postalCode": "44170",
+    "latitude": 47.5642,
+    "longitude": -1.615,
+    "description": "Artisans, associations, braderie, vide-grenier et animations.",
+    "source": "agenda-local"
+  },
+  {
+    "date": "06/09/2026",
+    "title": "Vide-grenier",
+    "category": "Brocante / vide-grenier",
+    "place": "Châteaubriant",
+    "postalCode": "44110",
+    "latitude": 47.718,
+    "longitude": -1.376,
+    "address": "Halle de Béré",
+    "description": "Vide-grenier.",
+    "source": "agenda-local"
+  },
+  {
+    "date": "06/09/2026",
+    "title": "Vide-grenier + fête des résidents",
+    "category": "Fête locale",
+    "place": "Pouancé / Ombrée d’Anjou",
+    "postalCode": "49420",
+    "latitude": 47.739,
+    "longitude": -1.176,
+    "description": "Animations locales.",
+    "source": "agenda-local"
+  }
+]
