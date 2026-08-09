@@ -11,15 +11,12 @@
 </head>
 <body>
 <header>
-  <div>
-    <h1>Événements Drone</h1>
-    <small id="updated">Actualisation…</small>
-  </div>
+  <div><h1>Événements Drone</h1><small id="updated">Actualisation…</small></div>
   <button id="refresh" class="icon-button" title="Actualiser" aria-label="Actualiser">↻</button>
 </header>
 
 <main>
-<section class="city-picker">
+<section class="city-picker city-picker-locked">
   <div class="city-picker-head">
     <div>
       <span class="eyebrow">SECTEUR DE RECHERCHE</span>
@@ -28,26 +25,24 @@
     <span class="pin-icon">⌖</span>
   </div>
 
-  <div class="city-search">
+  <div class="city-search locked-search">
     <span class="search-icon">⌕</span>
-    <input id="sector" type="search" autocomplete="off"
-           placeholder="Ville ou code postal…"
-           aria-label="Ville ou code postal">
-    <button id="sectorSearch" class="search-button" aria-label="Rechercher">Rechercher</button>
+    <input id="sector" type="text" value="Châteaubriant" readonly aria-label="Secteur de recherche">
+    <button class="search-button" disabled>Rechercher</button>
   </div>
-
-  <div id="citySuggestions" class="city-suggestions" hidden></div>
 
   <div class="selected-city">
     <span class="selected-dot"></span>
     <div>
-      <strong id="selectedCity">Châteaubriant</strong>
+      <strong>Châteaubriant</strong>
       <small id="sectorStatus">Secteur actif</small>
     </div>
-    <button id="clearCity" class="clear-city" title="Revenir à Châteaubriant">×</button>
+    <span class="lock-icon">🔒</span>
   </div>
 
-  <p class="city-help">Les distances et le potentiel sont recalculés depuis ce secteur.</p>
+  <p class="city-help">
+    Secteur temporairement fixé sur Châteaubriant. Le changement de ville sera réactivé plus tard.
+  </p>
 </section>
 
 <section class="filters">
@@ -88,32 +83,6 @@
     <div id="modalContent"></div>
   </section>
 </div>
-
-<template id="eventTemplate">
-<article class="event">
-  <div class="event-top">
-    <div>
-      <span class="date"></span>
-      <h2 class="title"></h2>
-      <p class="place"></p>
-    </div>
-    <button class="fav" aria-label="Ajouter aux favoris">☆</button>
-  </div>
-  <p class="description"></p>
-  <div class="badges">
-    <span class="distance-badge"></span>
-    <span class="potential-badge"></span>
-    <span class="outdoor-badge"></span>
-    <span class="contact-badge"></span>
-    <span class="flight-badge"></span>
-  </div>
-  <div class="actions">
-    <button class="contact">📞 Contact</button>
-    <button class="flight">🚁 Vol</button>
-    <button class="details">Détails</button>
-  </div>
-</article>
-</template>
 
 <script src="app.js"></script>
 </body>
