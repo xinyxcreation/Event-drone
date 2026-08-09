@@ -12,57 +12,23 @@
 <body>
 <header>
   <div><h1>Événements Drone</h1><small id="updated">Actualisation…</small></div>
-  <button id="refresh" class="icon-button" title="Actualiser" aria-label="Actualiser">↻</button>
+  <button id="refresh" title="Actualiser">↻</button>
 </header>
-
 <main>
-<section class="city-picker city-picker-locked">
-  <div class="city-picker-head">
-    <div>
-      <span class="eyebrow">SECTEUR DE RECHERCHE</span>
-      <h2>Où veux-tu prospecter ?</h2>
-    </div>
-    <span class="pin-icon">⌖</span>
-  </div>
-
-  <div class="city-search locked-search">
-    <span class="search-icon">⌕</span>
-    <input id="sector" type="text" value="Châteaubriant" readonly aria-label="Secteur de recherche">
-    <button class="search-button" disabled>Rechercher</button>
-  </div>
-
-  <div class="selected-city">
-    <span class="selected-dot"></span>
-    <div>
-      <strong>Châteaubriant</strong>
-      <small id="sectorStatus">Secteur actif</small>
-    </div>
-    <span class="lock-icon">🔒</span>
-  </div>
-
-  <p class="city-help">
-    Secteur temporairement fixé sur Châteaubriant. Le changement de ville sera réactivé plus tard.
-  </p>
-</section>
-
 <section class="filters">
   <label>Distance
     <select id="distance">
-      <option value="10">10 km</option>
-      <option value="20">20 km</option>
-      <option value="30" selected>30 km</option>
-      <option value="50">50 km</option>
-      <option value="100">100 km</option>
-      <option value="150">150 km</option>
+      <option value="10">10 km</option><option value="20">20 km</option>
+      <option value="30" selected>30 km</option><option value="50">50 km</option><option value="100">100 km</option>
     </select>
   </label>
   <label>Afficher
     <select id="statusFilter">
-      <option value="all">Tous</option>
+      <option value="potential" selected>⭐ Potentiel drone</option>
+      <option value="high">⭐ Potentiel élevé</option>
+      <option value="medium">🟢 Potentiel</option>
       <option value="outdoor">🚁 Extérieur</option>
-      <option value="star1">★ Potentiel</option>
-      <option value="star2">★★ Potentiel élevé</option>
-      <option value="star3">★★★ Très haut potentiel</option>
+      <option value="all">📅 Tous</option>
       <option value="fav">⭐ Favoris</option>
       <option value="todo">📞 À contacter</option>
       <option value="contacted">📞 Contactés</option>
@@ -71,19 +37,17 @@
     </select>
   </label>
 </section>
-
-<section id="stats" class="stats" aria-label="Statistiques rapides"></section>
+<section id="stats" class="stats"></section>
 <section id="events"></section>
 </main>
-
-<div id="modal" class="modal" hidden>
-  <div class="modal-backdrop" data-close-modal></div>
-  <section class="modal-card" role="dialog" aria-modal="true">
-    <button class="modal-close" data-close-modal aria-label="Fermer">×</button>
-    <div id="modalContent"></div>
-  </section>
-</div>
-
+<template id="eventTemplate">
+<article class="event">
+  <div class="event-top"><div><span class="date"></span><h2 class="title"></h2><p class="place"></p></div><button class="fav">☆</button></div>
+  <p class="description"></p>
+  <div class="badges"><span class="distance-badge"></span><span class="potential-badge"></span><span class="outdoor-badge"></span><span class="contact-badge"></span><span class="flight-badge"></span></div>
+  <div class="actions"><button class="contact">📞 Contact</button><button class="flight">🚁 Vol</button><button class="details">Détails</button></div>
+</article>
+</template>
 <script src="app.js"></script>
 </body>
 </html>
