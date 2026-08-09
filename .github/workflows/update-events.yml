@@ -20,37 +20,35 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v4
 
-      - name: Télécharger les événements Loire-Atlantique
+      - name: Télécharger les événements
         run: |
           mkdir -p data
           curl -L --fail --retry 3 --retry-delay 2             "https://data.loire-atlantique.fr/api/explore/v2.1/catalog/datasets/793866443_fetes-et-manifestations-en-loire-atlantique/exports/json?limit=10000"             -o data/source-events.json
-          echo "Téléchargement terminé"
           ls -lh data/source-events.json
 
       - name: Générer events.json
         run: python3 scripts/build_events.py
 
-      - name: Vérifier les événements générés
+      - name: Vérifier
         run: |
           python3 - <<'PY'
           import json
-          with open("events.json", encoding="utf-8") as f:
-              data = json.load(f)
-          events = data.get("events", [])
+          d=json.load(open("events.json", encoding="utf-8"))
+          events=d.get("events",[])
           print(f"Événements générés : {len(events)}")
           if not events:
               raise SystemExit("ERREUR : aucun événement généré")
-          for event in events[:10]:
-              print(f"- {event.get('date')} | {event.get('title')} | {event.get('place')} | {event.get('distance')} km")
+          for e in events[:10]:
+              print(f"- {e['date']} | {e['title']} | {e['place']} | {e['distance']} km")
           PY
 
-      - name: Publier events.json
+      - name: Publier
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add events.json
           if git diff --cached --quiet; then
-            echo "Aucune modification des événements."
+            echo "Aucune modification."
           else
             git commit -m "chore: actualisation automatique des événements"
             git push
