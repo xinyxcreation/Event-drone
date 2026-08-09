@@ -35,3 +35,11 @@ Ne pas remplacer `events.json` : il est généré automatiquement par GitHub Act
 - détails
 - chargement automatique de `events.json`
 - actualisation manuelle
+
+
+## Modification de cette archive
+
+La recherche de ville est uniquement une maquette verrouillée.
+Le secteur réel reste Châteaubriant. Aucun lieu n'est enregistré.
+La mise en page a été compactée pour retrouver l'échelle de la version
+fonctionnelle précédente.

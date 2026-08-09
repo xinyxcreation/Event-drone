@@ -80,3 +80,129 @@ header small{display:block;margin-top:6px;font-size:20px}
   .actions button{font-size:16px}
   .event{padding:22px}
 }
+
+
+/* === Version compacte : conserver l'ergonomie de la version fonctionnelle === */
+header{
+  padding:18px 24px 16px;
+}
+header h1{font-size:30px}
+header small{font-size:17px}
+.icon-button{width:56px;height:56px;font-size:36px;border-radius:18px}
+
+.city-picker{
+  margin:20px 24px 14px;
+  padding:22px 24px;
+  border-radius:28px;
+}
+.city-picker-head{align-items:center}
+.eyebrow{font-size:15px}
+.city-picker h2{
+  font-size:27px;
+  line-height:1.12;
+  margin:5px 0 14px;
+}
+.pin-icon{
+  width:54px;height:54px;border-radius:18px;font-size:29px;
+}
+.city-search{
+  padding:8px 12px;
+  border-radius:22px;
+}
+.search-icon{font-size:27px}
+.city-search input{
+  font-size:21px;
+}
+.search-button{
+  padding:13px 22px;
+  font-size:18px;
+  border-radius:17px;
+}
+.selected-city{
+  margin-top:11px;
+  padding:14px 17px;
+  border-radius:19px;
+}
+.selected-city strong{font-size:20px}
+.selected-city small{font-size:15px}
+.selected-dot{
+  width:16px;height:16px;
+  box-shadow:0 0 0 7px #ffe9eb;
+}
+.lock-icon{font-size:20px}
+.city-help{
+  margin:12px 3px 0;
+  font-size:15px;
+  line-height:1.35;
+}
+
+.filters{
+  gap:14px;
+  padding:0 24px 14px;
+}
+.filters label{font-size:17px}
+.filters select{
+  margin-top:5px;
+  padding:14px 16px;
+  border-radius:17px;
+  font-size:20px;
+}
+
+.stats{
+  gap:12px;
+  padding:14px 24px;
+}
+.stat{
+  flex-basis:125px;
+  min-height:82px;
+  border-radius:20px;
+  padding:11px;
+}
+.stat strong{font-size:20px}
+.stat small{font-size:14px;margin-top:5px}
+
+.event{
+  margin:0 24px 18px;
+  padding:21px;
+  border-radius:26px;
+}
+.date{font-size:16px}
+.event h2{font-size:24px}
+.place{font-size:18px}
+.fav{
+  width:56px;height:56px;
+  border-radius:19px;
+  font-size:37px;
+}
+.badges{margin:14px 0;gap:7px}
+.badges span{padding:7px 11px;font-size:14px}
+.actions{gap:9px}
+.actions button{
+  padding:13px 7px;
+  font-size:16px;
+  border-radius:16px;
+}
+
+/* Le champ est fictif : il ressemble à la future recherche sans agrandir
+   artificiellement toute la page. */
+.locked-search input{
+  font-size:21px;
+  font-weight:600;
+}
+.locked-search{
+  cursor:not-allowed;
+}
+
+@media(max-width:600px){
+  header{padding:18px 22px 15px}
+  header h1{font-size:29px}
+  header small{font-size:16px}
+  .city-picker{
+    margin:18px 22px 14px;
+    padding:20px;
+  }
+  .city-picker h2{font-size:26px}
+  .filters{padding-left:22px;padding-right:22px}
+  .stats{padding-left:22px;padding-right:22px}
+  .event{margin-left:22px;margin-right:22px}
+}
