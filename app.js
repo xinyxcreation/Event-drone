@@ -1,4 +1,5 @@
 const STORAGE='events-drone-user-v5';
+const LEARN_THRESHOLD=3;
 let events=[];
 
 const fallback=[
@@ -19,128 +20,124 @@ function loadUser(){
 }
 
 function saveUser(){
-  const state={};
-  for(const e of events){
-    state[e.id]={
+  localStorage.setItem(STORAGE,JSON.stringify(
+    Object.fromEntries(events.map(e=>[e.id,{
       favorite:!!e.favorite,
       contact:e.contact||'todo',
       flight:e.flight||'unknown'
-    };
-  }
-  localStorage.setItem(STORAGE,JSON.stringify(state));
+    }]))
+  ));
 }
 
 function fmtDate(d){
   const x=new Date(d+'T12:00:00');
-  return isNaN(x)
-    ? String(d||'Date inconnue')
-    : x.toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'long'});
+  return isNaN(x)?String(d||'Date inconnue'):
+    x.toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'long'});
 }
 
-/*
- * Normalise les données anciennes/nouvelles.
- * Le système de localisation n'est volontairement pas touché ici :
- * la distance fournie par build_events.py reste la référence.
- */
-function normalizeEvent(e){
-  const score=Number(e.droneScore);
-  let potential=e.dronePotential;
+function normalizeText(s){
+  return String(s||'').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9\s-]/g,' ')
+    .replace(/\s+/g,' ').trim();
+}
 
-  if(!['high','medium','low'].includes(potential)){
-    potential=Number.isFinite(score)
-      ? (score>=6?'high':score>=3?'medium':'low')
-      : 'low';
-  }
+function categoryKey(e){
+  return normalizeText(e.category||'sans categorie');
+}
 
-  return {
-    ...e,
-    droneScore:Number.isFinite(score)?Math.max(0,Math.min(10,score)):0,
-    dronePotential:potential,
-    outdoor:e.outdoor===true || e.outdoor==='true' || e.outdoor===1 || e.outdoor==='1',
-    distance:Number.isFinite(Number(e.distance))?Number(e.distance):999
-  };
+function meaningfulWords(e){
+  return normalizeText(`${e.title||''} ${e.category||''}`)
+    .split(' ')
+    .filter(w=>w.length>=5 &&
+      !['evenement','evenements','animation','animations','locale','locales',
+        'festival','association','associations'].includes(w));
 }
 
 function applyUserState(list){
   const u=loadUser();
-
-  return list.map(raw=>{
-    const e=normalizeEvent(raw);
-    const saved=u[e.id]||{};
-
-    return {
-      ...e,
-      ...saved,
-      contact:saved.contact||e.contact||'todo',
-      flight:saved.flight||e.flight||'unknown',
-      favorite:!!saved.favorite
-    };
-  });
+  return list.map(e=>({
+    ...e,
+    ...(u[e.id]||{}),
+    contact:u[e.id]?.contact||e.contact||'todo',
+    flight:u[e.id]?.flight||e.flight||'unknown',
+    favorite:!!u[e.id]?.favorite
+  }));
 }
 
 function mergeFallback(list){
   const ids=new Set(list.map(e=>e.id));
-  return [...list,...fallback.filter(e=>!ids.has(e.id)).map(normalizeEvent)];
+  return [...list,...fallback.filter(e=>!ids.has(e.id))];
 }
 
-/* Potentiel intelligent :
-   - on utilise le score calculé par build_events.py ;
-   - on garde une sécurité pour les anciennes données ;
-   - le filtre "potentiel drone" = tout ce qui est réellement exploitable
-     (moyen + élevé), jamais les événements faibles.
-*/
-function level(e){
-  const score=Number(e.droneScore);
-  if(Number.isFinite(score)){
-    if(score>=6)return 'high';
-    if(score>=3)return 'medium';
-    return 'low';
+/*
+ * Potentiel :
+ *   0 = aucun potentiel
+ *   1 = ★ potentiel (niveau medium de la source)
+ *   2 = ★★ potentiel élevé (niveau high de la source)
+ *   3 = ★★★ très haut potentiel, appris grâce aux favoris répétés
+ */
+function learning(){
+  const u=loadUser();
+  const category={};
+  const words={};
+
+  for(const e of events){
+    if(!e.favorite) continue;
+    const c=categoryKey(e);
+    category[c]=(category[c]||0)+1;
+
+    for(const w of new Set(meaningfulWords(e))){
+      words[w]=(words[w]||0)+1;
+    }
   }
-  return e.dronePotential||'low';
+  return {category,words};
+}
+
+function potentialLevel(e){
+  const l=learning();
+
+  // Un événement régulièrement mis en favori devient très haut potentiel.
+  if((l.category[categoryKey(e)]||0)>=LEARN_THRESHOLD) return 3;
+
+  for(const w of meaningfulWords(e)){
+    if((l.words[w]||0)>=LEARN_THRESHOLD) return 3;
+  }
+
+  if(e.dronePotential==='high' || Number(e.droneScore||0)>=6) return 2;
+  if(e.dronePotential==='medium' || Number(e.droneScore||0)>=3) return 1;
+  return 0;
+}
+
+function potentialLabel(level){
+  return ['☆ Faible potentiel','★ Potentiel','★★ Potentiel élevé','★★★ Très haut potentiel'][level];
+}
+
+function potentialClass(level){
+  return ['low','medium','high','very-high'][level];
+}
+
+function statusLabel(e){
+  return ({
+    unknown:'🚁 Non vérifié',
+    asked:'🟠 Autorisation demandée',
+    accepted:'🟢 Vol accepté',
+    refused:'🔴 Vol refusé'
+  })[e.flight]||'🚁 Non vérifié';
+}
+
+function isToContact(e){
+  // « À contacter » = uniquement les favoris qui ne sont pas encore contactés.
+  return !!e.favorite && e.contact!=='contacted';
 }
 
 function isPotential(e){
-  return level(e)==='high'||level(e)==='medium';
+  return potentialLevel(e)>=1;
 }
 
-function levelLabel(e){
-  const l=level(e);
-  if(l==='high')return '⭐ Fort potentiel';
-  if(l==='medium')return '🟢 Potentiel moyen';
-  return '⚪ Faible potentiel';
-}
-
-function potentialReason(e){
-  if(Array.isArray(e.droneReasons)&&e.droneReasons.length){
-    return e.droneReasons.slice(0,4).join(' · ');
-  }
-  if(e.outdoor && level(e)==='high')return 'Extérieur · forte opportunité';
-  if(e.outdoor && level(e)==='medium')return 'Extérieur · opportunité possible';
-  if(level(e)==='high')return 'Score élevé';
-  if(level(e)==='medium')return 'Score intermédiaire';
-  return 'Peu intéressant pour le drone';
-}
-
-function filterList(list,filter){
-  switch(filter){
-    case 'potential': return list.filter(isPotential);
-    case 'high': return list.filter(e=>level(e)==='high');
-    case 'medium': return list.filter(e=>level(e)==='medium');
-    case 'low': return list.filter(e=>level(e)==='low');
-    case 'outdoor': return list.filter(e=>e.outdoor);
-    case 'fav': return list.filter(e=>e.favorite);
-    case 'todo': return list.filter(e=>e.contact==='todo');
-    case 'contacted': return list.filter(e=>e.contact==='contacted');
-    case 'accepted': return list.filter(e=>e.flight==='accepted');
-    case 'refused': return list.filter(e=>e.flight==='refused');
-    default: return list;
-  }
-}
-
-function statButton(icon,count,label,filter,active){
-  return `<button type="button" class="stat ${active?'active':''}" data-filter="${filter}">
-    <strong>${icon} ${count}</strong><small>${label}</small>
-  </button>`;
+function quickFilter(filter){
+  $('#statusFilter').value=filter;
+  render();
 }
 
 async function refresh(){
@@ -148,21 +145,20 @@ async function refresh(){
 
   try{
     const r=await fetch('./events.json?ts='+Date.now(),{cache:'no-store'});
-    if(!r.ok)throw new Error(r.status);
+    if(!r.ok) throw new Error(r.status);
 
     const data=await r.json();
-    const source=Array.isArray(data)?data:(data.events||[]);
-    events=applyUserState(mergeFallback(source));
+    events=applyUserState(mergeFallback(data.events||[]));
 
     $('#updated').textContent=
       `✓ ${events.length} événements · `+
-      new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+      new Date().toLocaleTimeString('fr-FR',{
+        hour:'2-digit',minute:'2-digit'
+      });
   }catch(e){
     console.error(e);
     events=applyUserState(fallback);
-
-    $('#updated').textContent=
-      '⚠️ events.json indisponible · données locales';
+    $('#updated').textContent='⚠️ events.json indisponible · données locales';
   }
 
   render();
@@ -172,26 +168,65 @@ function render(){
   const max=Number($('#distance').value);
   const filter=$('#statusFilter').value;
 
-  // Distance uniquement : aucun changement de centre/localisation.
-  const within=events.filter(e=>e.distance<=max);
-  let list=filterList(within,filter);
+  let list=events.filter(e=>Number(e.distance)<=max);
 
-  // Tri : date, puis meilleur potentiel, puis proximité.
+  if(filter==='potential')
+    list=list.filter(e=>isPotential(e));
+
+  if(filter==='high')
+    list=list.filter(e=>potentialLevel(e)===2);
+
+  if(filter==='very-high')
+    list=list.filter(e=>potentialLevel(e)===3);
+
+  if(filter==='medium')
+    list=list.filter(e=>potentialLevel(e)===1);
+
+  if(filter==='outdoor')
+    list=list.filter(e=>e.outdoor);
+
+  if(filter==='fav')
+    list=list.filter(e=>e.favorite);
+
+  if(filter==='todo')
+    list=list.filter(isToContact);
+
+  if(filter==='contacted')
+    list=list.filter(e=>e.contact==='contacted');
+
+  if(filter==='accepted')
+    list=list.filter(e=>e.flight==='accepted');
+
+  if(filter==='refused')
+    list=list.filter(e=>e.flight==='refused');
+
   list.sort((a,b)=>
     new Date(a.date)-new Date(b.date) ||
-    Number(b.droneScore||0)-Number(a.droneScore||0) ||
-    Number(a.distance)-Number(b.distance) ||
-    String(a.title).localeCompare(String(b.title),'fr')
+    potentialLevel(b)-potentialLevel(a) ||
+    Number(a.distance)-Number(b.distance)
   );
 
-  $('#stats').innerHTML=[
-    statButton('📅',within.length,'Événements','all',filter==='all'),
-    statButton('🚁',within.filter(e=>e.outdoor).length,'Extérieur','outdoor',filter==='outdoor'),
-    statButton('⭐',within.filter(e=>level(e)==='high').length,'Fort potentiel','high',filter==='high'),
-    statButton('🟢',within.filter(e=>level(e)==='medium').length,'Potentiel moyen','medium',filter==='medium'),
-    statButton('📞',within.filter(e=>e.contact==='todo').length,'À contacter','todo',filter==='todo'),
-    statButton('🟢',within.filter(e=>e.flight==='accepted').length,'Vol accepté','accepted',filter==='accepted')
-  ].join('');
+  const within=events.filter(e=>Number(e.distance)<=max);
+
+  const quick=[
+    ['all','📅',within.length],
+    ['outdoor','🚁',within.filter(e=>e.outdoor).length],
+    ['potential','★',within.filter(isPotential).length],
+    ['high','★★',within.filter(e=>potentialLevel(e)===2).length],
+    ['very-high','★★★',within.filter(e=>potentialLevel(e)===3).length],
+    ['fav','⭐',within.filter(e=>e.favorite).length],
+    ['todo','📞',within.filter(isToContact).length]
+  ];
+
+  $('#stats').innerHTML=quick.map(x=>
+    `<button type="button" class="stat ${filter===x[0]?'active':''}" data-filter="${x[0]}">
+      <span class="stat-icon">${x[1]}</span><span>${x[2]}</span>
+    </button>`
+  ).join('');
+
+  $('#stats').querySelectorAll('.stat').forEach(btn=>{
+    btn.onclick=()=>quickFilter(btn.dataset.filter);
+  });
 
   const box=$('#events');
   box.innerHTML='';
@@ -201,24 +236,22 @@ function render(){
     return;
   }
 
-  for(const e of list){
+  list.forEach(e=>{
     const n=$('#eventTemplate').content.cloneNode(true);
+    const level=potentialLevel(e);
 
     n.querySelector('.date').textContent=
       fmtDate(e.date)+(e.startTime?' · '+e.startTime:'');
 
     n.querySelector('.title').textContent=e.title;
     n.querySelector('.place').textContent=
-      '📍 '+(e.place||'Lieu non précisé')+(e.address?' — '+e.address:'');
-
+      '📍 '+e.place+(e.address?' — '+e.address:'');
     n.querySelector('.description').textContent=e.description||'';
+    n.querySelector('.distance-badge').textContent=`${e.distance} km`;
 
-    n.querySelector('.distance-badge').textContent=
-      `${Number(e.distance).toFixed(1).replace('.0','')} km`;
-
-    const potentialBadge=n.querySelector('.potential-badge');
-    potentialBadge.textContent=levelLabel(e);
-    potentialBadge.title=potentialReason(e);
+    const pb=n.querySelector('.potential-badge');
+    pb.textContent=potentialLabel(level);
+    pb.className='potential-badge '+potentialClass(level);
 
     n.querySelector('.outdoor-badge').textContent=
       e.outdoor?'🚁 Extérieur':'🏠 Intérieur';
@@ -226,12 +259,7 @@ function render(){
     n.querySelector('.contact-badge').textContent=
       e.contact==='contacted'?'📞 Contacté':'📞 À contacter';
 
-    n.querySelector('.flight-badge').textContent=({
-      unknown:'🚁 Non vérifié',
-      asked:'🟠 Autorisation demandée',
-      accepted:'🟢 Vol accepté',
-      refused:'🔴 Vol refusé'
-    })[e.flight]||'🚁 Non vérifié';
+    n.querySelector('.flight-badge').textContent=statusLabel(e);
 
     n.querySelector('.fav').textContent=e.favorite?'★':'☆';
 
@@ -248,52 +276,38 @@ function render(){
     };
 
     n.querySelector('.flight').onclick=()=>{
-      const states=['unknown','asked','accepted','refused'];
-      const i=states.indexOf(e.flight);
-      e.flight=states[(i+1+states.length)%states.length];
+      const s=['unknown','asked','accepted','refused'];
+      e.flight=s[(s.indexOf(e.flight)+1)%s.length];
       saveUser();
       render();
     };
 
     n.querySelector('.details').onclick=()=>{
-      const reasons=potentialReason(e);
-
+      const reasons=(e.droneReasons||[]).join(', ');
       alert(
-`${e.title}
-${e.place||'Lieu non précisé'}${e.address?' — '+e.address:''}
-${fmtDate(e.date)}${e.startTime?' · '+e.startTime:''}
-
-Potentiel drone : ${levelLabel(e)}
-Score : ${Number(e.droneScore||0)}/10
-Pourquoi : ${reasons}
-${e.outdoor?'Événement extérieur':'Événement intérieur'}
-
-Contact : ${e.contact==='contacted'?'Contacté':'À contacter'}
-Drone : ${e.flight}
-${e.phone?'Téléphone : '+e.phone+'\n':''}${e.email?'Email : '+e.email+'\n':''}${e.url?'\n'+e.url:''}`
+        `${e.title}\n${e.place}${e.address?' — '+e.address:''}\n`+
+        `${fmtDate(e.date)}${e.startTime?' · '+e.startTime:''}\n\n`+
+        `Potentiel drone : ${potentialLabel(level)} (${e.droneScore||0}/10)\n`+
+        `${reasons?`Indices : ${reasons}\n`:''}`+
+        `${e.outdoor?'Événement extérieur':'Événement intérieur'}\n`+
+        `Contact : ${e.contact==='contacted'?'Contacté':'À contacter'}\n`+
+        `Drone : ${e.flight}`+
+        `${e.phone?'\nTéléphone : '+e.phone:''}`+
+        `${e.email?'\nEmail : '+e.email:''}`+
+        `${e.url?'\n\n'+e.url:''}`
       );
     };
 
     box.appendChild(n);
-  }
+  });
 }
-
-// Les cartes statistiques sont maintenant de vrais filtres rapides.
-document.addEventListener('click',e=>{
-  const stat=e.target.closest('[data-filter]');
-  if(!stat)return;
-
-  $('#statusFilter').value=stat.dataset.filter;
-  render();
-});
 
 $('#distance').onchange=render;
 $('#statusFilter').onchange=render;
 $('#refresh').onclick=refresh;
 
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(console.warn);
-}
+if('serviceWorker' in navigator)
+  navigator.serviceWorker.register('sw.js');
 
 render();
 refresh();
