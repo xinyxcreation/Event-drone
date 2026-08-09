@@ -43,7 +43,7 @@ function potential(e){
   if(learnedCategory(e)||learnedKeyword(e)) return 3;
   return basePotential(e);
 }
-function potentialLabel(level){return ['—','* Potentiel','** Potentiel élevé','*** Très haut potentiel'][level]}
+function potentialLabel(level){return ['—','★ Potentiel','★★ Potentiel élevé','★★★ Très haut potentiel'][level]}
 function potentialClass(level){return ['low','medium','high','very-high'][level]}
 function favoriteEvent(e,on){
   const was=!!e.favorite;
@@ -95,14 +95,62 @@ function showPrefs(){
  alert(msg);
 }
 function render(){
- recalcDistances();const max=+$('#distance').value,filter=$('#statusFilter').value;let list=events.filter(e=>e.distance<=max);if(filter==='very')list=list.filter(e=>potential(e)===3);if(filter==='high')list=list.filter(e=>potential(e)===2);if(filter==='medium')list=list.filter(e=>potential(e)===1);if(filter==='potential')list=list.filter(e=>potential(e)>=1);if(filter==='outdoor')list=list.filter(e=>e.outdoor);if(filter==='fav')list=list.filter(e=>e.favorite);if(filter==='todo')list=list.filter(e=>e.contact==='todo');if(filter==='contacted')list=list.filter(e=>e.contact==='contacted');if(filter==='accepted')list=list.filter(e=>e.flight==='accepted');if(filter==='refused')list=list.filter(e=>e.flight==='refused');list.sort((a,b)=>new Date(a.date)-new Date(b.date)||potential(b)-potential(a)||a.distance-b.distance);
+ recalcDistances();const max=+$('#distance').value,filter=$('#statusFilter').value;let list=events.filter(e=>e.distance<=max);if(filter==='very')list=list.filter(e=>potential(e)===3);if(filter==='high')list=list.filter(e=>potential(e)===2);if(filter==='medium')list=list.filter(e=>potential(e)===1);if(filter==='potential')list=list.filter(e=>potential(e)>=1);if(filter==='outdoor')list=list.filter(e=>e.outdoor);
+ if(filter==='star1')list=list.filter(e=>(e.droneScore||e.potential||0)>=1);
+ if(filter==='star2')list=list.filter(e=>(e.droneScore||e.potential||0)>=2);
+ if(filter==='star3')list=list.filter(e=>(e.droneScore||e.potential||0)>=3);if(filter==='fav')list=list.filter(e=>e.favorite);if(filter==='todo')list=list.filter(e=>e.contact==='todo');if(filter==='contacted')list=list.filter(e=>e.contact==='contacted');if(filter==='accepted')list=list.filter(e=>e.flight==='accepted');if(filter==='refused')list=list.filter(e=>e.flight==='refused');list.sort((a,b)=>new Date(a.date)-new Date(b.date)||potential(b)-potential(a)||a.distance-b.distance);
  const within=events.filter(e=>e.distance<=max);$('#stats').innerHTML=[['📅',within.length],['🚁',within.filter(e=>e.outdoor).length],['***',within.filter(e=>potential(e)===3).length],['**',within.filter(e=>potential(e)===2).length],['*',within.filter(e=>potential(e)===1).length],['📞',within.filter(e=>e.contact==='todo').length]].map(x=>`<div class="stat">${x[0]} ${x[1]}</div>`).join('');
  const box=$('#events');box.innerHTML='';if(!list.length){box.innerHTML='<div class="empty">Aucun événement avec ces filtres.</div>';return}
- list.forEach(e=>{const n=$('#eventTemplate').content.cloneNode(true),level=potential(e);n.querySelector('.date').textContent=fmtDate(e.date);n.querySelector('.title').textContent=e.title;n.querySelector('.place').textContent='📍 '+e.place+(e.address?' — '+e.address:'');n.querySelector('.description').textContent=e.description||'';n.querySelector('.distance-badge').textContent=`${e.distance} km`;n.querySelector('.potential-badge').textContent=potentialLabel(level);n.querySelector('.potential-badge').className='potential-badge '+potentialClass(level);n.querySelector('.outdoor-badge').textContent=e.outdoor?'🚁 Extérieur':'🏠 Intérieur';n.querySelector('.contact-badge').textContent=e.contact==='contacted'?'📞 Contacté':'📞 À contacter';n.querySelector('.flight-badge').textContent=statusBadge(e);n.querySelector('.fav').textContent=e.favorite?'★':'☆';n.querySelector('.fav').onclick=()=>favoriteEvent(e,!e.favorite);n.querySelector('.contact').onclick=()=>{e.contact=e.contact==='contacted'?'todo':'contacted';save();render()};n.querySelector('.flight').onclick=()=>{const s=['unknown','asked','accepted','refused'];e.flight=s[(s.indexOf(e.flight)+1)%s.length];save();render()};n.querySelector('.details').onclick=()=>{let x=`${e.title}\n${e.category?e.category+'\n':''}${e.place}${e.address?' — '+e.address:''}\n${fmtDate(e.date)}${e.startTime?' · '+e.startTime:''}\n\nPotentiel : ${potentialLabel(level)}\n${e.outdoor?'Événement extérieur':'Événement intérieur'}\nContact : ${e.contact==='contacted'?'Contacté':'À contacter'}\nDrone : ${e.flight}`;if(e.phone)x+=`\nTéléphone : ${e.phone}`;if(e.email)x+=`\nEmail : ${e.email}`;if(isExcluded(e))x+='\n\n🚫 Type actuellement ignoré';x+='\n\nActions :';const ok=confirm(x+'\n\nOK = fermer · Annuler = gérer ce type');if(!ok){if(isExcluded(e))restoreType(e);else excludeType(e)}};box.appendChild(n)});
+ list.forEach(e=>{const n=$('#eventTemplate').content.cloneNode(true),level=potential(e);n.querySelector('.date').textContent=fmtDate(e.date);n.querySelector('.title').textContent=e.title;n.querySelector('.place').textContent='📍 '+e.place+(e.address?' — '+e.address:'');n.querySelector('.description').textContent=e.description||'';n.querySelector('.distance-badge').textContent=`${e.distance} km`;n.querySelector('.potential-badge').textContent=potentialLabel(level);n.querySelector('.potential-badge').className='potential-badge '+potentialClass(level);n.querySelector('.outdoor-badge').textContent=e.outdoor?'🚁 Extérieur':'🏠 Intérieur';n.querySelector('.contact-badge').textContent=e.contact==='contacted'?'📞 Contacté':'📞 À contacter';n.querySelector('.flight-badge').textContent=statusBadge(e);n.querySelector('.fav').textContent=e.favorite?'★':'☆';n.querySelector('.fav').onclick=()=>favoriteEvent(e,!e.favorite);n.querySelector('.contact').onclick=()=>{e.contact=e.contact==='contacted'?'todo':'contacted';save();render()};n.querySelector('.flight').onclick=()=>{const s=['unknown','asked','accepted','refused'];e.flight=s[(s.indexOf(e.flight)+1)%s.length];save();render()};n.querySelector('.details').onclick=()=>{
+ let x=`${e.title}\n${e.category?e.category+'\n':''}${e.place}${e.address?' — '+e.address:''}\n${fmtDate(e.date)}${e.startTime?' · '+e.startTime:''}\n\nPotentiel : ${potentialLabel(level)}\n${e.outdoor?'Événement extérieur':'Événement intérieur'}\nContact : ${e.contact==='contacted'?'Contacté':'À contacter'}\nDrone : ${e.flight}`;
+ if(e.phone)x+=`\nTéléphone : ${e.phone}`;
+ if(e.email)x+=`\nEmail : ${e.email}`;
+ if(isExcluded(e))x+='\n\n🚫 Type actuellement ignoré';
+ const action=prompt(x+'\n\nTapez IGNORER pour exclure ce type, ou RETABLIR pour le réactiver.\nLaissez vide pour fermer.','');
+ if(action?.toUpperCase()==='IGNORER'&&!isExcluded(e))excludeType(e);
+ if(action?.toUpperCase()==='RETABLIR'&&isExcluded(e))restoreType(e);
+};box.appendChild(n)});
 }
 
 $('#distance').onchange=render;$('#statusFilter').onchange=render;$('#refresh').onclick=refresh;$('#sectorSearch').onclick=searchSector;$('#sector').addEventListener('keydown',e=>{if(e.key==='Enter')searchSector()});$('#prefs').onclick=showPrefs;
+
+let searchCenter = {lat:47.718, lon:-1.376, name:"Châteaubriant"};
+
+async function searchLocation(){
+  const input = document.querySelector('#location');
+  const status = document.querySelector('#locationStatus');
+  const q = (input?.value || '').trim();
+  if(!q) return;
+  status.textContent = 'Recherche…';
+  try{
+    const url='https://api-adresse.data.gouv.fr/search/?limit=1&q='+encodeURIComponent(q);
+    const r=await fetch(url);
+    const data=await r.json();
+    const f=data.features?.[0];
+    if(!f) throw new Error('Lieu introuvable');
+    const [lon,lat]=f.geometry.coordinates;
+    searchCenter={lat,lon,name:f.properties?.label||q};
+    // Recalculate the displayed distances without changing the event database.
+    events=events.map(e=>{
+      if(e.latitude==null || e.longitude==null) return e;
+      const R=6371, p=Math.PI/180;
+      const a=Math.sin((e.latitude-lat)*p/2)**2+
+        Math.cos(lat*p)*Math.cos(e.latitude*p)*Math.sin((e.longitude-lon)*p/2)**2;
+      return {...e,distance:Math.round(R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))*10)/10};
+    });
+    status.textContent='📍 '+(f.properties?.label||q);
+    render();
+  }catch(err){
+    status.textContent='Lieu introuvable';
+  }
+}
+
 async function refresh(){
  $('#updated').textContent='🔄 Actualisation…';
  try{const r=await fetch('./events.json?ts='+Date.now(),{cache:'no-store'});if(!r.ok)throw new Error(r.status);const data=await r.json();events=applyUserState(data.events||[]);const old=events.length;events=applyUserState([...events,...fallback.filter(f=>!events.some(e=>e.id===f.id))]);recalcDistances();$('#updated').textContent=`✓ ${events.length} événements · ${new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`}catch(e){events=applyUserState(fallback);$('#updated').textContent='⚠️ events.json indisponible · données locales'}render()}
 $('#sector').value=settings.center.name||CENTER_DEFAULT.name;$('#sectorStatus').textContent=`📍 ${settings.center.name||CENTER_DEFAULT.name}`;render();refresh();
+
+document.querySelector('#searchLocation')?.addEventListener('click', searchLocation);
+document.querySelector('#location')?.addEventListener('keydown', e=>{
+  if(e.key==='Enter') searchLocation();
+});
