@@ -12,17 +12,15 @@ window.EventDroneAgriculture = (() => {
   }[c]));
 
   const parseDate = value => {
+    if (value instanceof Date) return value;
     const d = new Date(`${value}T12:00:00`);
     return Number.isNaN(d.getTime()) ? null : d;
   };
 
   const formatDate = value => {
-    const d = value instanceof Date ? value : parseDate(value);
+    const d = parseDate(value);
     if (!d) return value || 'Date inconnue';
-    return d.toLocaleDateString('fr-FR', {
-      day: 'numeric',
-      month: 'long'
-    });
+    return d.toLocaleDateString('fr-FR', {day:'numeric', month:'long'});
   };
 
   const addMonths = (date, months) => {
@@ -31,8 +29,6 @@ window.EventDroneAgriculture = (() => {
     return d;
   };
 
-  const monthIndex = date => date.getMonth();
-
   function status(activity) {
     const start = parseDate(activity.harvestStart);
     const end = parseDate(activity.harvestEnd);
@@ -40,64 +36,55 @@ window.EventDroneAgriculture = (() => {
 
     const prospectStart = addMonths(start, -1);
     const now = new Date();
-    now.setHours(12, 0, 0, 0);
+    now.setHours(12,0,0,0);
 
     if (now >= start && now <= end) return 'harvest';
     if (now >= prospectStart && now < start) return 'prospect';
     return 'none';
   }
 
-  function activityMonths(activity) {
+  function monthState(activity) {
     const start = parseDate(activity.harvestStart);
     const end = parseDate(activity.harvestEnd);
-    if (!start || !end) return [];
+    if (!start || !end) return MONTHS.map(()=>'none');
 
     const prospectStart = addMonths(start, -1);
     const prospectEnd = new Date(start);
-    prospectEnd.setDate(prospectEnd.getDate() - 1);
+    prospectEnd.setDate(prospectEnd.getDate()-1);
 
-    return MONTHS.map((_, index) => {
+    return MONTHS.map((_, month) => {
+      // The calendar represents the activity's annual period.
+      // A month is colored if any day in that month intersects the period.
       const year = start.getFullYear();
-      const candidates = [];
+      let result = 'none';
 
-      // Include the month in the harvest/prospect window if any day
-      // of that month intersects the corresponding period.
-      for (const y of [year - 1, year, year + 1]) {
-        const monthStart = new Date(y, index, 1, 12);
-        const monthEnd = new Date(y, index + 1, 0, 12);
-        if (monthEnd >= prospectStart && monthStart <= prospectEnd) {
-          candidates.push('prospect');
-        }
-        if (monthEnd >= start && monthStart <= end) {
-          candidates.push('harvest');
-        }
+      for (const y of [year-1, year, year+1]) {
+        const ms = new Date(y, month, 1, 12);
+        const me = new Date(y, month+1, 0, 12);
+
+        if (me >= start && ms <= end) result = 'harvest';
+        else if (me >= prospectStart && ms <= prospectEnd && result === 'none') result = 'prospect';
       }
-
-      if (candidates.includes('harvest')) return 'harvest';
-      if (candidates.includes('prospect')) return 'prospect';
-      return '';
+      return result;
     });
   }
 
-  function renderTimeline(activity) {
-    const months = activityMonths(activity);
+  function timeline(activity) {
     const currentMonth = new Date().getMonth();
+    const states = monthState(activity);
 
     return `
-      <div class="agri-calendar" aria-label="Calendrier annuel">
-        <div class="agri-month-labels">
-          ${MONTHS.map((month, index) => `
-            <span class="agri-month-label ${index === currentMonth ? 'current' : ''}">
-              ${month}
-            </span>
+      <div class="agri-calendar">
+        <div class="agri-months">
+          ${MONTHS.map((m,i)=>`
+            <span class="agri-month ${i===currentMonth?'is-current':''}">${m}</span>
           `).join('')}
         </div>
-
-        <div class="agri-month-grid">
-          ${months.map((type, index) => `
+        <div class="agri-months">
+          ${states.map((s,i)=>`
             <span
-              class="agri-month-cell ${type} ${index === currentMonth ? 'current' : ''}"
-              title="${type === 'harvest' ? 'Récolte' : type === 'prospect' ? 'Prospection thermique' : 'Hors période'}"
+              class="agri-month-cell ${s} ${i===currentMonth?'is-current':''}"
+              title="${s==='harvest'?'Récolte / fauche':s==='prospect'?'Prospection thermique':'Hors période'}"
             ></span>
           `).join('')}
         </div>
@@ -105,27 +92,29 @@ window.EventDroneAgriculture = (() => {
     `;
   }
 
-  function interestText(level) {
-    return ['Faible', 'Intéressant', 'Très intéressant', 'Très intéressant'][
-      Math.max(0, Math.min(3, Number(level) || 0))
-    ];
+  function stateMarkup(state) {
+    if (state === 'harvest') {
+      return `<span class="agri-state harvest"><i></i>Récolte en cours</span>`;
+    }
+    if (state === 'prospect') {
+      return `<span class="agri-state prospect"><i></i>Prospection thermique</span>`;
+    }
+    return '';
   }
 
   function render(container) {
     if (!container) return;
 
-    const activities = [...data.activities].sort((a, b) => {
-      const sa = parseDate(a.harvestStart)?.getTime() ?? Infinity;
-      const sb = parseDate(b.harvestStart)?.getTime() ?? Infinity;
-      return sa - sb;
-    });
+    const activities = [...data.activities].sort((a,b) =>
+      (parseDate(a.harvestStart)?.getTime() ?? Infinity) -
+      (parseDate(b.harvestStart)?.getTime() ?? Infinity)
+    );
 
     container.innerHTML = `
       <section class="agri-page">
 
         <div class="agri-intro">
           <div class="agri-kicker">🌾 Agriculture</div>
-
           <div class="agri-rule">
             <span class="agri-rule-icon">🚁</span>
             <div>
@@ -133,94 +122,64 @@ window.EventDroneAgriculture = (() => {
               <small>Environ 1 mois avant le début de la récolte ou de la fauche.</small>
             </div>
           </div>
-
           <div class="agri-location">📍 ${esc(data.sector)}</div>
         </div>
 
         <div class="agri-list">
-          ${activities.map(activity => {
-            const state = status(activity);
-
-            const stateLabel =
-              state === 'harvest'
-                ? '<span class="agri-state harvest">🟢 Récolte en cours</span>'
-                : state === 'prospect'
-                  ? '<span class="agri-state prospect">🟡 Prospection thermique</span>'
-                  : '';
+          ${activities.map((activity,index)=>{
+            const state=status(activity);
+            const icon=(String(activity.type).match(/^\S+/)||['🌾'])[0];
+            const name=String(activity.type).replace(/^\S+\s*/,'');
+            const detailsId=`agri-details-${index}`;
 
             return `
-              <article class="agri-card agri-${state}">
+              <article class="agri-card agri-${state}" data-agri-card>
 
-                <button
-                  type="button"
-                  class="agri-card-button"
+                <div
+                  class="agri-card-toggle"
+                  role="button"
+                  tabindex="0"
                   aria-expanded="false"
+                  aria-controls="${detailsId}"
                 >
-                  <span class="agri-icon" aria-hidden="true">${esc(activity.type).split(' ')[0]}</span>
-
-                  <span class="agri-card-main">
-                    <span class="agri-type">
-                      ${esc(activity.type).replace(/^\S+\s*/, '')}
+                  <div class="agri-crop">
+                    <span class="agri-icon">${esc(icon)}</span>
+                    <span class="agri-name-wrap">
+                      <strong>${esc(name)}</strong>
+                      <small>${formatDate(activity.harvestStart)} → ${formatDate(activity.harvestEnd)}</small>
                     </span>
+                  </div>
 
-                    <span class="agri-period">
-                      ${formatDate(activity.harvestStart)}
-                      → ${formatDate(activity.harvestEnd)}
-                    </span>
-                  </span>
+                  <div class="agri-timeline-wrap">
+                    ${timeline(activity)}
+                  </div>
 
-                  <span class="agri-card-calendar">
-                    ${renderTimeline(activity)}
-                  </span>
+                  <div class="agri-card-status">
+                    ${stateMarkup(state)}
+                  </div>
 
-                  <span class="agri-card-side">
-                    ${stateLabel}
-                    <span class="agri-chevron" aria-hidden="true">⌄</span>
-                  </span>
-                </button>
+                  <span class="agri-chevron" aria-hidden="true">⌄</span>
+                </div>
 
-                <div class="agri-details" hidden>
-                  <div class="agri-detail-grid">
-
+                <div class="agri-details" id="${detailsId}" hidden>
+                  <div class="agri-details-grid">
                     <div>
-                      <span class="agri-detail-label">📅 Récolte estimée</span>
-                      <strong>
-                        ${formatDate(activity.harvestStart)}
-                        → ${formatDate(activity.harvestEnd)}
-                      </strong>
+                      <span>📅 Récolte / fauche</span>
+                      <strong>${formatDate(activity.harvestStart)} → ${formatDate(activity.harvestEnd)}</strong>
                     </div>
-
                     <div>
-                      <span class="agri-detail-label">🚁 Prospection thermique</span>
-                      <strong>
-                        ${formatDate(addMonths(parseDate(activity.harvestStart), -1))}
-                        → ${formatDate(parseDate(activity.harvestStart))}
-                      </strong>
+                      <span>🚁 Prospection thermique</span>
+                      <strong>${formatDate(addMonths(parseDate(activity.harvestStart),-1))} → ${formatDate(activity.harvestStart)}</strong>
                     </div>
-
                     <div>
-                      <span class="agri-detail-label">⭐ Niveau d'intérêt</span>
-                      <strong>${esc(interestText(activity.interest))}</strong>
+                      <span>📍 Secteur</span>
+                      <strong>${esc((activity.sectors||[]).join(' · ') || data.sector)}</strong>
                     </div>
-
-                    <div>
-                      <span class="agri-detail-label">📍 Secteur</span>
-                      <strong>
-                        ${esc((activity.sectors || []).join(' · ') || data.sector)}
-                      </strong>
-                    </div>
-
                   </div>
 
                   <div class="agri-explanation">
                     <strong>Pourquoi prospecter ?</strong>
                     <p>${esc(activity.explanation)}</p>
-                  </div>
-
-                  <div class="agri-detail-note">
-                    Les dates restent indicatives et dépendent notamment
-                    de la météo, de la culture, de la parcelle et des pratiques
-                    de l'exploitation.
                   </div>
                 </div>
 
@@ -230,62 +189,51 @@ window.EventDroneAgriculture = (() => {
         </div>
 
         <p class="agri-note">
-          ℹ️ Les périodes sont indicatives et peuvent varier selon l'année,
-          la météo, la culture, la parcelle et les pratiques de l'exploitation.
+          ℹ️ Les périodes sont indicatives et peuvent varier selon l'année, la météo,
+          la culture, la parcelle et les pratiques de l'exploitation.
         </p>
-
       </section>
     `;
 
-    container.querySelectorAll('.agri-card-button').forEach(button => {
-      button.addEventListener('click', () => {
-        const card = button.closest('.agri-card');
-        const details = card.querySelector('.agri-details');
-        const isOpen = !details.hidden;
+    const toggle = card => {
+      const details=card.querySelector('.agri-details');
+      const open=!details.hidden;
+      details.hidden=open;
+      card.classList.toggle('expanded',!open);
+      const control=card.querySelector('.agri-card-toggle');
+      control.setAttribute('aria-expanded',String(!open));
+    };
 
-        details.hidden = isOpen;
-        button.setAttribute('aria-expanded', String(!isOpen));
-        card.classList.toggle('expanded', !isOpen);
+    container.querySelectorAll('[data-agri-card]').forEach(card=>{
+      const control=card.querySelector('.agri-card-toggle');
+      control.addEventListener('click',()=>toggle(card));
+      control.addEventListener('keydown',e=>{
+        if(e.key==='Enter' || e.key===' '){
+          e.preventDefault();
+          toggle(card);
+        }
       });
     });
   }
 
-  async function load(url = './plugin/agriculture/agriculture.json') {
-    const response = await fetch(`${url}?ts=${Date.now()}`, {
-      cache: 'no-store'
-    });
-
-    if (!response.ok) {
-      throw new Error(`Agriculture HTTP ${response.status}`);
-    }
-
-    data = await response.json();
+  async function load(url='./plugin/agriculture/agriculture.json'){
+    const response=await fetch(`${url}?ts=${Date.now()}`,{cache:'no-store'});
+    if(!response.ok) throw new Error(`Agriculture HTTP ${response.status}`);
+    data=await response.json();
     return data;
   }
 
-  async function init(container) {
-    try {
+  async function init(container){
+    try{
       await load();
       render(container);
-    } catch (error) {
-      console.error('Event-drone Agriculture:', error);
-
-      if (container) {
-        container.innerHTML = `
-          <div class="agri-error">
-            Impossible de charger le calendrier agricole.
-          </div>
-        `;
+    }catch(error){
+      console.error('Event-drone Agriculture:',error);
+      if(container){
+        container.innerHTML=`<div class="agri-error">Impossible de charger le calendrier agricole.</div>`;
       }
     }
   }
 
-  return {
-    load,
-    render,
-    init,
-    get data() {
-      return data;
-    }
-  };
+  return {load,render,init,get data(){return data;}};
 })();
