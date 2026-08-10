@@ -1,48 +1,16 @@
-# 🌾 Event-drone — Plugin Agriculture v2
+# 🌾 Event-drone — Plugin Agriculture V3
 
-Version compacte du module Agriculture.
+- Calendrier **JFMAMJJASOND directement dans chaque carte**.
+- Le mois courant est entouré en rouge dans chaque carte.
+- 🟨 orange : fenêtre de prospection thermique.
+- 🟩 vert : récolte/fauche.
+- Liseret complet jaune ou vert autour de la carte selon la période actuelle.
+- Aucun liseret hors période.
+- Aucun affichage d'étoiles sur les cartes.
+- Clic sur une carte pour afficher les détails.
+- Un seul rappel général de la période de prospection et du secteur en haut.
 
-## Présentation
-
-Le menu affiche des cartes compactes représentant les différentes périodes agricoles.
-
-Chaque carte peut être ouverte par clic pour afficher les informations détaillées.
-
-### Liserets
-
-- 🟢 vert : période de récolte / fauche en cours ;
-- 🟡 jaune : période de prospection thermique, environ 1 mois avant ;
-- aucun liseret : période trop éloignée.
-
-L'explication générale de la prospection et le secteur sont affichés une seule fois en haut du module.
-
-Les informations détaillées ne sont affichées qu'après clic sur une carte.
-
-## Fichiers
-
-- `agriculture.json` : données
-- `agriculture.js` : logique
-- `agriculture.css` : présentation
-
-## Intégration
-
-Le module est prévu pour :
-
-```text
-plugin/agriculture/
-```
-
-Dans `index.html` :
-
-```html
-<link rel="stylesheet" href="plugin/agriculture/agriculture.css">
-<script src="plugin/agriculture/agriculture.js"></script>
-```
-
-Puis :
-
-```javascript
-EventDroneAgriculture.init(
-  document.querySelector('#agriculture')
-);
-```
+Fichiers :
+- `agriculture.json`
+- `agriculture.js`
+- `agriculture.css`
