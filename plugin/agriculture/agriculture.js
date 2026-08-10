@@ -1,4 +1,14 @@
 window.EventDroneAgriculture=(()=>{
+const CSS_URL='./plugin/agriculture/agriculture.css';
+function ensureStyles(){
+  if(document.querySelector('link[data-event-drone-agriculture]')) return;
+  const link=document.createElement('link');
+  link.rel='stylesheet';
+  link.href=CSS_URL+'?v=7';
+  link.dataset.eventDroneAgriculture='';
+  document.head.appendChild(link);
+}
+ensureStyles();
 let data={activities:[],sector:'Châteaubriant · Loire-Atlantique',prospectionLeadMonths:1};
 const MONTHS=['J','F','M','A','M','J','J','A','S','O','N','D'];
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
