@@ -69,7 +69,7 @@
       "period": "Printemps → automne",
       "interest": 2,
       "interestLabel": "Intéressant",
-      "explanation": "Les périodes de fauche sont variables et peuvent se répéter dans l'année. La prospection doit donc être déclenchée lorsque la fauche d'une parcelle est réellement proche.",
+      "explanation": "Les périodes de fauche sont variables et peuvent se répéter dans l'année. La prospection doit être déclenchée lorsque la fauche d'une parcelle est réellement proche.",
       "sectors": [
         "Châteaubriant",
         "Loire-Atlantique"
