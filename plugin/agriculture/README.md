@@ -1,22 +1,36 @@
-# 🌾 Event-drone — Plugin Agriculture
+# 🌾 Event-drone — Plugin Agriculture v2
 
-Module indépendant pour le calendrier agricole et la prospection thermique.
+Version compacte du module Agriculture.
 
-## Installation
+## Présentation
 
-Copier le dossier `plugin/agriculture/` dans Event-drone.
+Le menu affiche des cartes compactes représentant les différentes périodes agricoles.
+
+Chaque carte peut être ouverte par clic pour afficher les informations détaillées.
+
+### Liserets
+
+- 🟢 vert : période de récolte / fauche en cours ;
+- 🟡 jaune : période de prospection thermique, environ 1 mois avant ;
+- aucun liseret : période trop éloignée.
+
+L'explication générale de la prospection et le secteur sont affichés une seule fois en haut du module.
+
+Les informations détaillées ne sont affichées qu'après clic sur une carte.
+
+## Fichiers
+
+- `agriculture.json` : données
+- `agriculture.js` : logique
+- `agriculture.css` : présentation
+
+## Intégration
+
+Le module est prévu pour :
 
 ```text
-Event-drone/
-└── plugin/
-    └── agriculture/
-        ├── agriculture.json
-        ├── agriculture.js
-        ├── agriculture.css
-        └── README.md
+plugin/agriculture/
 ```
-
-## Chargement
 
 Dans `index.html` :
 
@@ -25,28 +39,10 @@ Dans `index.html` :
 <script src="plugin/agriculture/agriculture.js"></script>
 ```
 
-Créer ensuite le conteneur de la page Agriculture :
-
-```html
-<section id="agriculture" hidden></section>
-```
-
-À l'ouverture de l'onglet :
+Puis :
 
 ```javascript
-EventDroneAgriculture.init(document.querySelector('#agriculture'));
+EventDroneAgriculture.init(
+  document.querySelector('#agriculture')
+);
 ```
-
-## Contenu
-
-Chaque activité indique :
-
-1. période agricole ;
-2. type de récolte / fauche ;
-3. niveau d'intérêt thermique ;
-4. explication ;
-5. communes / secteurs concernés.
-
-La règle actuelle est une fenêtre de prospection thermique **1 mois avant le début de la période agricole**.
-
-Les périodes restent indicatives et devront pouvoir être remplacées par des données agricoles actualisées.
